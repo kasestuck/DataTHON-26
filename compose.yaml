@@ -1,0 +1,27 @@
+services:
+  api:
+    build: .
+    env_file: .env
+    environment:
+      DATA_DIR: /app/var
+      CATALOG_DIR: /app/backend/data
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
+      HF_DATASETS_OFFLINE: "1"
+      ANALYZER_CATALOG: /app/backend/data/violation_types.json
+      ANALYZER_POLICY: /app/backend/data/violation_type_policy.json
+      ANALYZER_DETECTOR_DIR: /app/models/rtdetr_r18vd
+      ANALYZER_VLM_DIR: /app/models/qwen3_vl_2b
+      ANALYZER_TEMP_DIR: /app/var/analyzer
+    gpus: all
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - ./var:/app/var
+      - ./models:/app/models:ro
+      - ./backend/data:/app/backend/data:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
