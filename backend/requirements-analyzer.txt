@@ -1,0 +1,5 @@
+# Core only. No model downloads or GPU packages are installed implicitly.
+numpy>=2,<3
+opencv-python-headless==4.13.0.92
+openpyxl>=3.1.5,<4
+pytest>=8.4,<9
