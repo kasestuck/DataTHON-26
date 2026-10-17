@@ -52,16 +52,17 @@ def _save(path, value):
 
 
 def evaluate(labels, videos_dir, runner=analyze_video_report, tolerance_sec=3., *, catalog_available=True,
-             valid_types=None, checkpoint=None, fingerprint=None, resume=False, progress=None):
+             valid_types=None, checkpoint=None, fingerprint=None, resume=False, progress=None, stop_on_error=False):
     if not math.isfinite(tolerance_sec) or tolerance_sec < 0:
         raise ValueError("Localization tolerance must be finite and non-negative")
-    predictions, times, skipped, details = {}, {}, [], {}
+    predictions, times, skipped, details, audits = {}, {}, [], {}, {}
     if resume and checkpoint and Path(checkpoint).exists():
         cached = json.loads(Path(checkpoint).read_text(encoding="utf-8"))
         if not fingerprint or cached.get("fingerprint") != fingerprint:
             raise ValueError("Evaluation checkpoint does not match data/catalog/configuration")
         predictions, times, skipped = cached["predictions"], cached["timings"], cached["skipped"]
         details = cached.get("finding_details", {})
+        audits = cached.get("window_audits", {})
     videos = list(dict.fromkeys(row["video"] for row in labels))
     completed = set(predictions) | {item["video"] for item in skipped}
     for position, video in enumerate(videos, 1):
@@ -83,11 +84,14 @@ def evaluate(labels, videos_dir, runner=analyze_video_report, tolerance_sec=3., 
                 skipped.append({"video": video, "reason": "empty_catalog_diagnostics_only"})
                 continue
             predictions[video] = verify_findings(result.findings, valid_types)
+            audits[video] = getattr(result, "window_audit", [])
             details[video] = [{"violation_type": f.violation_type, "timecode_sec": f.timecode_sec,
                 "description": f.description, "confidence": f.confidence,
                 "evidence": predictions[video][i]["evidence"]} for i, f in enumerate(result.findings)]
             times[video] = {**result.timings, "wall_sec": time.monotonic() - started,
-                "peak_vram_bytes": result.peak_vram_bytes, "sampled_frames": result.sampled_frames,
+                "peak_vram_bytes": result.peak_vram_bytes,
+                "peak_reserved_vram_bytes": getattr(result, "peak_reserved_vram_bytes", None),
+                "sampled_frames": result.sampled_frames,
                 "candidate_windows": result.candidate_windows, "diagnostic_only": result.diagnostic_only,
                 "diagnostic_reasons": dict(Counter(result.diagnostics))}
             try:
@@ -101,7 +105,7 @@ def evaluate(labels, videos_dir, runner=analyze_video_report, tolerance_sec=3., 
                             "wall_sec": time.monotonic() - started})
         if checkpoint:
             _save(checkpoint, {"fingerprint": fingerprint, "predictions": predictions, "timings": times,
-                               "skipped": skipped, "finding_details": details})
+                               "skipped": skipped, "finding_details": details, "window_audits": audits})
         if progress:
             progress({"completed": position, "total": len(videos), "video": video,
                 "status": "evaluated" if video in predictions else "failed",
@@ -113,15 +117,19 @@ def evaluate(labels, videos_dir, runner=analyze_video_report, tolerance_sec=3., 
                     for r in predictions.get(video, [])],
                 "error": next((r["reason"] for r in skipped if r["video"] == video), None),
                 "wall_sec": round(time.monotonic() - started, 2)})
+        if stop_on_error and video not in predictions:
+            break
     report = compute_metrics(labels, predictions, tolerance_sec)
     report.update(status="complete" if len(predictions) == len(set(r["video"] for r in labels)) else "partial" if predictions else "unavailable",
-                  skipped=skipped, timings=times, predictions=predictions, finding_details=details)
+                  skipped=skipped, timings=times, predictions=predictions, finding_details=details, window_audits=audits)
     walls = [row["wall_sec"] for row in times.values()]
     peaks = [row["peak_vram_bytes"] for row in times.values() if row.get("peak_vram_bytes") is not None]
+    reserved_peaks = [row["peak_reserved_vram_bytes"] for row in times.values() if row.get("peak_reserved_vram_bytes") is not None]
     report["runtime"] = {"evaluated": len(walls), "mean_sec": mean(walls) if walls else None,
         "median_sec": median(walls) if walls else None, "max_sec": max(walls) if walls else None,
         "total_success_sec": sum(walls), "within_270_sec": sum(value < 270 for value in walls),
-        "peak_vram_bytes": max(peaks) if peaks else None}
+        "peak_vram_bytes": max(peaks) if peaks else None,
+        "peak_reserved_vram_bytes": max(reserved_peaks) if reserved_peaks else None}
     report["annotation_review"] = [{"video": row["video"], "timecode_sec": row["timecode_sec"],
         "reason": row.get("notes", ""), "source_row": row.get("source_row", "")}
         for row in labels if row.get("review_status") == "needs_review"]

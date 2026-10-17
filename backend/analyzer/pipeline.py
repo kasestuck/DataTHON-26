@@ -1,5 +1,6 @@
 """Synchronous integration pipeline. Production execution is process-supervised."""
 from dataclasses import dataclass, field
+import hashlib
 import multiprocessing as mp
 import os
 from pathlib import Path
@@ -15,7 +16,7 @@ from .errors import (AnalysisTimeoutError, AnalyzerError, InferenceError,
 from .events import EventExtractor
 from .policy import load_policy
 from .video import VideoReader
-from .vlm import build_prompt, generation_schema, validate_response
+from .vlm import bind_evidence_timestamp, build_prompt, generation_schema, validate_response
 
 
 @dataclass
@@ -28,6 +29,8 @@ class AnalysisReport:
     is_mock: bool = False
     diagnostic_only: bool = False
     peak_vram_bytes: int | None = None
+    peak_reserved_vram_bytes: int | None = None
+    window_audit: list[dict] = field(default_factory=list)
 
 
 def deduplicate(findings, tolerance_sec):
@@ -74,10 +77,17 @@ class Analyzer:
             report.candidate_windows += 1
             images = [frame.jpeg() for frame in candidate.frames]
             timestamps = [frame.timestamp_sec for frame in candidate.frames]
-            prompt = build_prompt(self.allowed_catalog, timestamps, self.policy)
+            prompt = build_prompt(self.allowed_catalog, timestamps, self.policy, version=self.config.prompt_version)
+            audit = {"window": report.candidate_windows, "selection_reasons": list(candidate.reasons),
+                "trigger_timestamp_sec": candidate.trigger_timestamp_sec,
+                "frames": [{"frame_index": frame.frame_index, "timestamp_sec": frame.timestamp_sec,
+                            "sha256": hashlib.sha256(image).hexdigest()}
+                           for frame, image in zip(candidate.frames, images)], "outcome": "inference_pending"}
+            if self.config.record_window_audit:
+                report.window_audit.append(audit)
             configure_schema = getattr(self.vlm, "set_response_schema", None)
             if configure_schema:
-                configure_schema(generation_schema(self.allowed_catalog, timestamps))
+                configure_schema(generation_schema(self.allowed_catalog, timestamps, version=self.config.prompt_version))
             vlm_deadline = min(deadline, time.monotonic() + self.config.vlm_timeout_sec)
             for attempt in range(2):
                 t = time.monotonic()
@@ -85,7 +95,9 @@ class Analyzer:
                 report.timings["vlm_sec"] += time.monotonic() - t
                 check_deadline()
                 try:
-                    response = validate_response(raw, self.allowed_catalog, len(images))
+                    response = (bind_evidence_timestamp(raw, self.allowed_catalog, timestamps)
+                        if self.config.prompt_version == "frame_bound_v2"
+                        else validate_response(raw, self.allowed_catalog, len(images)))
                     break
                 except InferenceError:
                     # Private diagnostics remain under the authorized temporary root.
@@ -101,35 +113,62 @@ class Analyzer:
                     prompt += (" Your previous reply failed the JSON schema. Return a fresh valid object. "
                         f"There are EXACTLY {len(images)} frames. Positive evidence_indices must be 1–3 "
                         f"distinct integers from 0 through {len(images)-1}; negative evidence_indices must be []. "
-                        "For no event use has_violation=false, violation_type=null, timecode_sec=null.")
+                        + ("For no event use has_violation=false, violation_type=null and no timecode_sec field."
+                           if self.config.prompt_version == "frame_bound_v2"
+                           else "For no event use has_violation=false, violation_type=null, timecode_sec=null."))
+            audit["response"] = {"observed_action": response.observed_action,
+                "has_violation": response.has_violation, "violation_type": response.violation_type,
+                "timecode_sec": response.timecode_sec, "confidence": response.confidence,
+                "evidence_indices": list(response.evidence_indices)}
             if not self.catalog:
+                audit["outcome"] = "diagnostic_only"
                 report.diagnostics.append(response.observed_action)
                 return
             if not response.has_violation:
+                audit["outcome"] = "no_supported_catalog_event"
                 report.diagnostics.append("no_supported_catalog_event")
                 return
             if response.confidence < self.config.confidence_threshold:
+                audit["outcome"] = "below_confidence_threshold"
                 report.diagnostics.append("below_confidence_threshold")
                 return
             rule = self.policy[response.violation_type]
             stamps = [timestamps[i] for i in response.evidence_indices]
             if len(stamps) < rule["min_evidence"] or max(stamps) - min(stamps) < rule["min_context_sec"]:
+                audit["outcome"] = "insufficient_temporal_evidence"
                 report.diagnostics.append("insufficient_temporal_evidence")
                 return
             # Allow at most 50 ms for decimal rounding of frame_index/FPS.
             if not timestamps[0] - .05 <= response.timecode_sec <= timestamps[-1] + .05:
                 raise InferenceError("VLM timestamp lies outside the supplied evidence window")
             timestamp = min(timestamps[-1], max(timestamps[0], response.timecode_sec))
-            evidence = [EvidenceFrame(timestamps[i], images[i]) for i in response.evidence_indices]
+            evidence_indices = list(response.evidence_indices)
+            if self.config.include_event_anchor:
+                anchor = min(range(len(timestamps)), key=lambda i: abs(timestamps[i] - response.timecode_sec))
+                if abs(timestamps[anchor] - response.timecode_sec) > .05:
+                    raise InferenceError("VLM timestamp does not identify a supplied source frame")
+                timestamp = timestamps[anchor]
+                if anchor not in evidence_indices:
+                    if len(evidence_indices) == 3:
+                        audit["outcome"] = "event_anchor_not_supported"
+                        report.diagnostics.append("event_anchor_not_supported")
+                        return
+                    # Original model proof already passed the unchanged policy.
+                    # Include the additional frame the model selected as its time.
+                    evidence_indices.insert(0, anchor)
+            evidence = [EvidenceFrame(timestamps[i], images[i]) for i in evidence_indices]
+            audit["returned_evidence_indices"], audit["finding_timecode_sec"] = evidence_indices, timestamp
             report.findings.append(Finding(response.violation_type, timestamp,
                 response.observed_action, response.confidence, evidence))
+            audit["outcome"] = "accepted_before_dedup"
 
         t = time.monotonic()
         with VideoReader(video_path) as reader:
             selector = CandidateSelector(self.config.window_frames, self.config.max_windows,
                 min_gap_sec=max(3., reader.info.duration_sec / self.config.max_windows - self.config.context_sec / 2),
                 coverage_sec=max(3., reader.info.duration_sec / self.config.max_windows - self.config.context_sec / 2),
-                context_sec=self.config.context_sec, sample_fps=self.config.sample_fps)
+                context_sec=self.config.context_sec, sample_fps=self.config.sample_fps,
+                strategy=self.config.candidate_strategy)
             report.timings["extraction_sec"] += time.monotonic() - t
             iterator = iter(reader.sample(self.config.sample_fps, self.config.max_side,
                 self.config.max_sample_frames, deadline))
@@ -152,6 +191,12 @@ class Analyzer:
         if not report.candidate_windows:
             raise VideoReadError("Video has too few sampled frames for a 4-frame temporal window")
         report.findings = deduplicate(report.findings, self.config.dedup_sec)
+        for audit in report.window_audit:
+            if audit["outcome"] == "accepted_before_dedup":
+                response = audit["response"]
+                audit["outcome"] = "accepted" if any(
+                    f.violation_type == response["violation_type"] and f.timecode_sec == audit.get("finding_timecode_sec", response["timecode_sec"])
+                    and f.confidence == response["confidence"] for f in report.findings) else "deduplicated"
         report.timings["total_sec"] = time.monotonic() - started
         return report
 
@@ -185,11 +230,13 @@ def _production_worker(connection, video_path, config):
                 torch.cuda.set_per_process_memory_fraction(config.memory_fraction)
             torch.cuda.reset_peak_memory_stats()
         detector = LocalRTDetr(config.detector_dir, config.device)
-        vlm = LocalTransformersVLM(config.vlm_dir, config.device, trace_dir=Path(config.temp_dir) / "diagnostics")
+        vlm = LocalTransformersVLM(config.vlm_dir, config.device, trace_dir=Path(config.temp_dir) / "diagnostics",
+            release_cuda_cache=config.release_cuda_cache)
         report = Analyzer(detector, vlm, config).analyze(video_path)
         report.timings["model_load_sec"] = time.monotonic() - started - report.timings["total_sec"]
         if config.device.startswith("cuda"):
             report.peak_vram_bytes = torch.cuda.max_memory_allocated()
+            report.peak_reserved_vram_bytes = torch.cuda.max_memory_reserved()
         connection.send((True, report))
     except Exception as exc:
         # The parent preserves known typed errors; no frames or descriptions in logs.

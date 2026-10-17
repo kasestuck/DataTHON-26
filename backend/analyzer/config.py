@@ -27,6 +27,11 @@ class AnalyzerConfig:
     dedup_sec: float = 4.
     memory_fraction: float | None = None  # Optional per-process PyTorch allocator cap.
     temp_dir: str = str(DEFAULT_TEMP_DIR)
+    prompt_version: str = "baseline"
+    record_window_audit: bool = False
+    candidate_strategy: str = "uniform"
+    include_event_anchor: bool = True
+    release_cuda_cache: bool = True
 
     def __post_init__(self):
         numeric = [self.confidence_threshold, self.sample_fps, self.timeout_sec, self.vlm_timeout_sec, self.dedup_sec, self.context_sec]
@@ -40,6 +45,12 @@ class AnalyzerConfig:
             raise ValueError("Invalid deadline or deduplication window")
         if not 4 <= self.window_frames <= 8 or not 64 <= self.max_side <= 1280 or self.max_windows < 1 or self.max_sample_frames < 1:
             raise ValueError("Invalid memory/window budget")
+        if self.prompt_version not in {"baseline", "sequence_v1", "frame_bound_v2"} or type(self.record_window_audit) is not bool:
+            raise ValueError("Invalid prompt version or audit flag")
+        if self.candidate_strategy not in {"uniform", "trigger"} or type(self.include_event_anchor) is not bool:
+            raise ValueError("Invalid candidate strategy or event-anchor flag")
+        if type(self.release_cuda_cache) is not bool:
+            raise ValueError("Invalid CUDA cache policy")
 
     @classmethod
     def from_env(cls):

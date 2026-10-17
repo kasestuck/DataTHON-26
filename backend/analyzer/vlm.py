@@ -56,7 +56,7 @@ def complete_json_object(raw):
         return False
 
 
-def generation_schema(catalog, timestamps):
+def generation_schema(catalog, timestamps, *, version="baseline"):
     """Constrain syntax, IDs, actual frame times and index range, never the verdict.
 
     Cross-field truth and evidence semantics are still checked by validate_response
@@ -68,10 +68,37 @@ def generation_schema(catalog, timestamps):
     required = ["observed_action", "violation_type", "timecode_sec", "evidence_indices", "confidence", "has_violation"]
     kinds = {"anyOf": [{"type": "string", "enum": list(catalog)}, {"type": "null"}]} if catalog else {"type": "null"}
     times = {"anyOf": [{"type": "number", "enum": list(timestamps)}, {"type": "null"}]} if catalog else {"type": "null"}
-    return {"type": "object", "additionalProperties": False, "required": required,
+    schema = {"type": "object", "additionalProperties": False, "required": required,
         "properties": {**common, "violation_type": kinds, "timecode_sec": times,
             "evidence_indices": {"type": "array", "minItems": 0, "maxItems": 3,
                 "items": {"type": "integer", "enum": list(range(len(timestamps)))}}}}
+    if version == "frame_bound_v2":
+        schema["required"].remove("timecode_sec")
+        del schema["properties"]["timecode_sec"]
+    return schema
+
+
+def bind_evidence_timestamp(raw, catalog, timestamps):
+    """The FIRST model-selected proof frame is the event anchor, by construction.
+
+    Never adds an unselected frame or changes a verdict/confidence. The original
+    frame timestamp is restored exactly, without model-generated floating times.
+    """
+    try:
+        data = json.loads(json_payload(raw)) if isinstance(raw, str) else dict(raw)
+        if set(data) != set(RESPONSE_SCHEMA["required"]) - {"timecode_sec"}:
+            raise ValueError("Frame-bound response has unexpected fields")
+        indices = data.get("evidence_indices")
+        stamp = None
+        if data.get("has_violation") is True:
+            if not isinstance(indices, list) or not indices or type(indices[0]) is not int or not 0 <= indices[0] < len(timestamps):
+                raise ValueError("Frame-bound response needs a valid event anchor")
+            stamp = timestamps[indices[0]]
+        data["timecode_sec"] = stamp
+        return validate_response(normalize_negative_evidence(json.dumps(data, ensure_ascii=False), len(timestamps)),
+                                 catalog, len(timestamps))
+    except (ValueError, TypeError) as exc:
+        raise InferenceError(f"Invalid frame-bound JSON: {exc}") from exc
 
 
 def normalize_negative_evidence(raw, frame_count):
@@ -157,7 +184,30 @@ def validate_response(raw, catalog, frame_count):
         raise InferenceError(f"Invalid VLM JSON: {exc}") from exc
 
 
-def build_prompt(catalog, timestamps, policy=None):
+def build_prompt(catalog, timestamps, policy=None, *, version="baseline"):
+    if version == "frame_bound_v2":
+        original = build_prompt(catalog, timestamps, policy)
+        if not catalog:
+            return original.replace('"timecode_sec":null, ', '').replace('"timecode_sec":null,', '')
+        prefix = original.split("Return ONE JSON object, no other text.")[0]
+        return prefix + (
+            "Return ONE JSON object, no other text. Fields in order: observed_action (short Russian sentence), "
+            "violation_type (matching id or null), evidence_indices (array), confidence (0..1), has_violation (boolean). "
+            "Put the frame showing the event moment FIRST in evidence_indices, followed by its context frames. "
+            "The first selected frame is the exact event timestamp; there is no timecode_sec field. "
+            "For sequences select the visible beginning AND outcome. Select THREE phases for a change of transactions. "
+            "All 1-3 selected distinct indices must support the SAME event and meet min_frames/min_span_sec. "
+            "Do not use unrelated frames merely to meet a span. "
+            f"Indices are 0-based 0..{len(timestamps)-1}. "
+            "For no supported event or insufficient information: null type, [], has_violation=false. "
+            "Do not infer a split of cash from ordinary counting or handing over one bundle. "
+            "observed_action must be ONE short Russian sentence, at most 12 words."
+        )
+    if version == "sequence_v1" and catalog:
+        from .quality_prompt import build_sequence_prompt
+        return build_sequence_prompt(catalog, timestamps, policy)
+    if version != "baseline" and version != "sequence_v1":
+        raise ValueError("Unknown prompt version")
     if not catalog:
         return (
             "An empty catalog permits observation only. Briefly describe only visible actions in Russian. "
@@ -226,8 +276,9 @@ class LocalTransformersVLM:
     """
     is_mock = False
 
-    def __init__(self, model_dir, device="cuda", trace_dir=None):
+    def __init__(self, model_dir, device="cuda", trace_dir=None, *, release_cuda_cache=False):
         self.trace_dir, self.call_number = Path(trace_dir) if trace_dir else None, 0
+        self.release_cuda_cache = release_cuda_cache
         self.response_schema = deepcopy(RESPONSE_SCHEMA)
         os.environ["LMFE_STRICT_JSON_FIELD_ORDER"] = "true"
         os.environ["LMFE_MAX_CONSECUTIVE_WHITESPACES"] = "1"
@@ -302,6 +353,10 @@ class LocalTransformersVLM:
                 metadata = {"call": self.call_number, "elapsed_sec": time.monotonic() - started,
                     "input_tokens": prefix_length, "generated_tokens": generated.shape[1] - prefix_length,
                     "deadline_exceeded": expired, "complete_json": complete_json_object(raw)}
+                if self.device.startswith("cuda"):
+                    metadata.update(memory_allocated_bytes=self.torch.cuda.memory_allocated(),
+                        memory_reserved_bytes=self.torch.cuda.memory_reserved(),
+                        peak_reserved_bytes=self.torch.cuda.max_memory_reserved())
                 with (self.trace_dir / f"vlm_{os.getpid()}.jsonl").open("a", encoding="utf-8") as log:
                     log.write(json.dumps(metadata) + "\n")
                 if expired:
@@ -315,3 +370,7 @@ class LocalTransformersVLM:
         finally:
             for picture in pictures:
                 picture.close()
+            if self.release_cuda_cache and self.device.startswith("cuda"):
+                # Variable token lengths can strand large unused SDPA blocks in
+                # the allocator. Release cache, never model tensors or evidence.
+                self.torch.cuda.empty_cache()
