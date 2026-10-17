@@ -215,3 +215,17 @@ a.btn{text-decoration:none}
 .marker:hover{transform:scaleX(1.6)}
 .playhead{position:absolute;top:-3px;bottom:-3px;left:0;width:2px;margin-left:-1px;border-radius:1px;background:var(--dark);pointer-events:none}
 .timeline-labels{display:flex;justify-content:space-between;margin:0 6px 4px;font-size:.8rem;color:var(--ink-2);font-variant-numeric:tabular-nums}
+
+/* Integration: keep long server descriptions and evidence inside narrow cards. */
+.page, .glass, .card, .fileinfo, .header nav { min-width:0; }
+#filename, .card p, .card h3, .error, .notice, .rule { overflow-wrap:anywhere; }
+.frames { max-width:100%; }
+.frame { max-width:100%; }
+.frame img { max-width:100%; }
+@media (max-width:640px) {
+  .header nav { flex-wrap:wrap; gap:4px; }
+  .header nav a { padding:6px 8px; }
+  .card-head { align-items:flex-start; }
+  .frame { width:100%; }
+  .frame img { width:100%; height:auto; max-height:240px; object-fit:contain; }
+}

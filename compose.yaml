@@ -6,6 +6,7 @@ services:
       ANALYZER_TARGET: backend.analyzer:analyze_video
       DATA_DIR: /app/var
       CATALOG_DIR: /app/backend/data
+      FRONTEND_DIST: /app/frontend
       HF_HUB_OFFLINE: "1"
       TRANSFORMERS_OFFLINE: "1"
       HF_DATASETS_OFFLINE: "1"

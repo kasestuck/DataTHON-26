@@ -134,14 +134,25 @@ def create_app(settings: Settings) -> FastAPI:
         def csrf_for(session_id: str) -> str:
             return hmac.new(settings.api_key.encode(), session_id.encode(), hashlib.sha256).hexdigest()
 
+        def require_same_origin(request: Request) -> None:
+            expected = (settings.public_origin or str(request.base_url)).rstrip("/")
+            origin = request.headers.get("origin")
+            if (origin is not None and origin != expected) or request.headers.get("sec-fetch-site") in {"cross-site", "same-site"}:
+                raise HTTPException(status_code=403, detail="Same-origin browser required")
+
         def require_browser(request: Request, x_csrf_token: str | None = Header(default=None)) -> None:
+            require_same_origin(request)
             session_id = request.cookies.get("ui_session")
             if not session_id or not x_csrf_token or not secrets.compare_digest(x_csrf_token, csrf_for(session_id)):
                 raise HTTPException(status_code=403, detail="Browser session required")
 
         @app.get("/ui-api/v1/session")
-        def browser_session(response: Response):
-            session_id = secrets.token_urlsafe(32)
+        def browser_session(request: Request, response: Response):
+            require_same_origin(request)
+            session_id = request.cookies.get("ui_session", "")
+            # Reuse a session across tabs; issuing a new cookie invalidates another tab's CSRF token.
+            if len(session_id) != 43 or not all(c.isascii() and (c.isalnum() or c in "_-") for c in session_id):
+                session_id = secrets.token_urlsafe(32)
             response.set_cookie(
                 "ui_session",
                 session_id,

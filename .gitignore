@@ -39,3 +39,7 @@ backend/analyzer/output/
 *.ckpt
 *.safetensors
 *.onnx
+
+node_modules/
+test-results/
+playwright-report/

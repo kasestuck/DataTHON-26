@@ -12,7 +12,7 @@
 
   <section class="glass hero hero--compact">
     <h1>Проверка видео с помощью <span>ИИ</span></h1>
-    <p>Загрузите запись работы кассира в формате .mov. Сервис найдёт признаки возможных нарушений, покажет время события, кадры-доказательства и правило с источником.</p>
+    <p>Загрузите запись работы кассира в формате .mov. Сервис найдёт признаки возможных нарушений, покажет время события, кадры-доказательства. Нормативный источник показывается только после подтверждения.</p>
   </section>
 
   <section id="screen-upload" class="screen upload">
@@ -30,8 +30,8 @@
     <div class="spinner"></div>
     <h2 id="status">Анализируем видео…</h2>
     <div class="timer" id="timer">00:00</div>
-    <p class="muted">Обычно занимает до нескольких минут. Не закрывайте страницу.</p>
-    <button type="button" class="btn btn--ghost" id="cancel">Отменить</button>
+    <p class="muted">Анализ занимает до 270 секунд после начала обработки. При очереди ожидание дольше. Процент прогресса сервер не возвращает.</p>
+    <button type="button" class="btn btn--ghost" id="cancel">Остановить ожидание</button>
   </section>
 
   <section id="screen-result" class="screen is-hidden">
@@ -41,6 +41,7 @@
   </section>
 </main>
 <script src="config.js"></script>
+<script src="api.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
