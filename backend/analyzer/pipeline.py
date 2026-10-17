@@ -226,6 +226,11 @@ def _production_worker(connection, video_path, config):
         from .vlm import LocalTransformersVLM
         import torch
         if config.device.startswith("cuda") and torch.cuda.is_available():
+            # CPU preprocessing/dispatch still runs in a CUDA job. On the tested
+            # Windows laptop the default 14-thread pool causes large latency
+            # spikes; keep it local to this spawned ML worker, not the API host.
+            if sys.platform == "win32":
+                torch.set_num_threads(1)
             if config.memory_fraction is not None:
                 torch.cuda.set_per_process_memory_fraction(config.memory_fraction)
             torch.cuda.reset_peak_memory_stats()

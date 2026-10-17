@@ -351,6 +351,7 @@ class LocalTransformersVLM:
             if self.trace_dir:
                 self.trace_dir.mkdir(parents=True, exist_ok=True)
                 metadata = {"call": self.call_number, "elapsed_sec": time.monotonic() - started,
+                    "cpu_threads": self.torch.get_num_threads(),
                     "input_tokens": prefix_length, "generated_tokens": generated.shape[1] - prefix_length,
                     "deadline_exceeded": expired, "complete_json": complete_json_object(raw)}
                 if self.device.startswith("cuda"):

@@ -116,7 +116,14 @@ def run(video: Path, *, require_finding=False):
                         'corrupt_video_status': failure['status'], 'error_has_no_verdict': 'verdict' not in failure,
                         'max_claimed_processing': max_active, 'uploads_removed': True}
             finally:
-                server.terminate()
+                # Windows children inherit the log handle. Stop the owned tree
+                # before TemporaryDirectory removes it, as in smoke_fullstack.
+                if os.name == 'nt' and server.poll() is None:
+                    subprocess.run(['taskkill', '/PID', str(server.pid), '/T', '/F'],
+                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10,
+                        creationflags=subprocess.CREATE_NO_WINDOW)
+                else:
+                    server.terminate()
                 try:
                     server.wait(timeout=10)
                 except subprocess.TimeoutExpired:
