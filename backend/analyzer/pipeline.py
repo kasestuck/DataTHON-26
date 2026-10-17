@@ -225,6 +225,8 @@ def _production_worker(connection, video_path, config, deadline=None):
     sys.dont_write_bytecode = True
     started = time.monotonic()
     try:
+        from .performance import request_inference_performance
+        high_qos = request_inference_performance() if config.device.startswith("cuda") else False
         from .network_guard import install_network_guard
         install_network_guard()
         for name in ("huggingface", "torch", "cuda", "inductor"):
@@ -255,6 +257,7 @@ def _production_worker(connection, video_path, config, deadline=None):
             "pid": os.getpid(), "parent_pid": os.getppid(), "executable": sys.executable,
             "torch_version": torch.__version__, "cuda_version": torch.version.cuda,
             "cpu_threads": torch.get_num_threads(), "interop_threads": torch.get_num_interop_threads(),
+            "high_qos_requested": high_qos,
             "detector_load_sec": detector_loaded - load_started,
             "vlm_load_sec": time.monotonic() - detector_loaded,
             "process_setup_and_model_load_sec": time.monotonic() - started,
