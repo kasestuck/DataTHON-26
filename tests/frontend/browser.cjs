@@ -56,11 +56,46 @@ async function start(page, file=payload()) {
   await page.locator('#file').setInputFiles(file); await page.locator('#check').click();
 }
 async function fixtureTests(browser) {
+  await test('Russian upload, processing and cancellation copy (synthetic API)',()=>scenario(browser,async ({page})=>{
+    await page.locator('#file').setInputFiles(payload(24,'unsupported.mp4'));
+    assert.equal(await page.locator('#error').textContent(),'Выберите видеофайл в формате MOV.');
+    await start(page);
+    await visible(page,'#screen-processing');
+    await page.waitForFunction(()=>document.querySelector('#status').textContent==='Выполняется анализ видеозаписи. Это может занять несколько минут.');
+    await page.locator('#cancel').click();
+    assert.equal(await page.locator('#error').textContent(),'Ожидание остановлено. Обработка видеозаписи на сервере может продолжиться.');
+  },{pending:true}));
+  await test('Russian failure copy hides CUDA and Python errors (synthetic API)',()=>scenario(browser,async ({page})=>{
+    await start(page);await visible(page,'#error');
+    assert.equal(await page.locator('#error').textContent(),'Не удалось завершить анализ видеозаписи. Повторите попытку позже.');
+    assert(!(await page.locator('body').textContent()).includes('RuntimeError'));
+    assert(!(await page.locator('body').textContent()).includes('CUDA'));
+    assert(await page.locator('#screen-result').isHidden());
+  },{result:{status:'failed',error:'RuntimeError: CUDA traceback private fixture'}}));
+  if (process.env.LEGAL_RESULT_FIXTURE) await test('18 backend-formatted risks remain nonbinding in the browser (synthetic Findings)',()=>scenario(browser,async ({page})=>{
+    await start(page);await visible(page,'#screen-result');
+    const cards=page.locator('.card');assert.equal(await cards.count(),18);
+    let contextual=0,internal=0;
+    for(const card of await cards.all()) {
+      const text=await card.textContent();
+      assert(text.includes('Возможный риск:'));
+      assert(text.includes('Нормативное основание требует дополнительной проверки'));
+      assert(!text.includes('Источник:'));
+      if(text.includes('Тематическая справка:'))contextual++;
+      if(text.includes('Внутренний регламент банка не предоставлен'))internal++;
+    }
+    assert.equal(contextual,7);assert.equal(internal,11);
+    assert.equal(await page.locator('.rule').count(),0);
+    await page.waitForFunction(()=>[...document.querySelectorAll('.frame img')].every(i=>i.complete&&i.naturalWidth>0));
+    for(const width of [360,390,768,1440]) {await page.setViewportSize({width,height:900});await noOverflow(page);}
+  },{result:JSON.parse(fs.readFileSync(process.env.LEGAL_RESULT_FIXTURE,'utf8'))}));
   await test('upload → job_id → polling → sorted cards and real JPEG data URLs (synthetic API fixtures)', () => scenario(browser,async ({page,stats})=>{
     await page.locator('#file').setInputFiles(payload(29*1024*1024));
     assert.match(await page.locator('#filename').textContent(),/29\.0/);
     await page.locator('#check').evaluate(b=>{b.click();b.click();});
     await visible(page,'#screen-result'); assert.equal(stats().uploads,1);
+    assert.equal(await page.locator('#result .verdict h2').textContent(),'Обнаружены признаки возможного нарушения');
+    assert((await page.locator('#result .notice').first().textContent()).includes('Результаты автоматического анализа носят предварительный характер и требуют проверки специалистом.'));
     assert.equal(await page.locator('.card').count(),2);
     assert.match(await page.locator('.card .btn').first().textContent(),/00:02\.1/);
     assert.match(await page.locator('.card .btn').last().textContent(),/01:02\.4/);
@@ -74,6 +109,7 @@ async function fixtureTests(browser) {
   }));
   await test('no_violation: empty result with limitation notice',()=>scenario(browser,async ({page})=>{
     await start(page); await visible(page,'#screen-result'); assert.equal(await page.locator('.card').count(),0);
+    assert.equal(await page.locator('#result .verdict h2').textContent(),'Признаки нарушений не обнаружены');
     assert.match(await page.locator('#result').textContent(),/не гарантирует/);
   },{result:clean}));
   await test('failed: safe error without verdict or private path',()=>scenario(browser,async ({page,stats})=>{
@@ -101,7 +137,7 @@ async function fixtureTests(browser) {
   await test('cancel stops client polling without claiming server cancellation',()=>scenario(browser,async ({page,stats})=>{
     await start(page);await visible(page,'#screen-processing');await page.waitForTimeout(120);
     await page.locator('#cancel').click();await visible(page,'#error');
-    assert.match(await page.locator('#error').textContent(),/Сервер может продолжить/);
+    assert.match(await page.locator('#error').textContent(),/Обработка видеозаписи на сервере может продолжиться/);
     const count=stats().polls;await page.waitForTimeout(150);assert.equal(stats().polls,count);
   },{pending:true}));
   await test('page navigation stops polling',()=>scenario(browser,async ({page,stats})=>{

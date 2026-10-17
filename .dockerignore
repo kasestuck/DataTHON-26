@@ -14,6 +14,7 @@ datasets
 videos
 backend/analyzer/output
 backend/data/reports
+backend/experiments
 backend/data/annotations
 backend/data/*.csv
 backend/data/*.tsv

@@ -15,6 +15,7 @@ from .contracts import EvidenceFrame, Finding
 from .errors import (AnalysisTimeoutError, AnalyzerError, InferenceError,
                      ModelNotConfiguredError, VideoReadError)
 from .events import EventExtractor
+from .ipc import send_result
 from .policy import load_policy
 from .video import VideoReader
 from .vlm import bind_evidence_timestamp, build_prompt, generation_schema, validate_response
@@ -267,10 +268,12 @@ def _production_worker(connection, video_path, config, deadline=None):
         if config.device.startswith("cuda"):
             report.peak_vram_bytes = torch.cuda.max_memory_allocated()
             report.peak_reserved_vram_bytes = torch.cuda.max_memory_reserved()
-        connection.send((True, report))
+        message = (True, report)
     except Exception as exc:
         # The parent preserves known typed errors; no frames or descriptions in logs.
-        connection.send(_worker_error(exc))
+        message = _worker_error(exc)
+    try:
+        send_result(connection, message)
     finally:
         connection.close()
 

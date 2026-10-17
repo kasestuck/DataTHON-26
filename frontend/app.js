@@ -27,12 +27,12 @@
   const host = document.getElementById("site-header");
   if (host) {
     const page = location.pathname.split("/").pop() || "index.html";
-    const name = ((function () { try { return localStorage.getItem("fv_name"); } catch (e) { return null; } })() || "Проверяющий").trim() || "Проверяющий";
+    const name = ((function () { try { return localStorage.getItem("fv_name"); } catch (e) { return null; } })() || "Специалист").trim() || "Специалист";
     const link = (href, t) => `<a href="${href}" class="${page === href ? "is-active" : ""}">${t}</a>`;
     host.className = "glass header";
     host.innerHTML = `
       <a class="logo" href="index.html"><span class="logo-drop"></span>
-        <span><b>Forte Vision</b> <small>ИИ-помощник проверки кассовой дисциплины</small></span></a>
+        <span><b>Forte Vision</b> <small>ИИ-помощник для проверки кассовой дисциплины</small></span></a>
       <nav>${link("index.html", "Главная")}${link("analyze.html", "ИИ-анализ")}${link("about.html", "О решении")}</nav>
       <div class="profile">
         <button class="avatar" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Профиль"></button>
@@ -66,10 +66,10 @@
    Кнопка перемотки вызывает window.seekTo(sec) из player.js. */
 (function () {
   const TEXT = {
-    no_violation: "В анализируемом видео признаки нарушений не обнаружены",
+    no_violation: "Признаки нарушений не обнаружены",
     violation: "Обнаружены признаки возможного нарушения",
   };
-  const NOTICE = "Результат является подсказкой для проверки человеком, а не юридическим или дисциплинарным заключением.";
+  const NOTICE = "Результаты автоматического анализа носят предварительный характер и требуют проверки специалистом.";
 
   function el(tag, cls, text) {
     const n = document.createElement(tag);
@@ -88,7 +88,7 @@
   }
   function openLightbox(src) {
     const box = el("div", "lightbox");
-    const img = el("img"); img.src = src; img.alt = "Кадр-доказательство";
+    const img = el("img"); img.src = src; img.alt = "Кадр события";
     box.append(img);
     const close = () => { box.remove(); document.removeEventListener("keydown", onKey); };
     const onKey = (e) => e.key === "Escape" && close();
@@ -101,14 +101,14 @@
     const m = el("div", "modal");
     const box = el("div", "glass modal-box");
     const x = el("button", "modal-x", "×"); x.type = "button"; x.setAttribute("aria-label", "Закрыть");
-    box.append(x, el("h3", null, v.type || "Нарушение"), el("p", "muted", "Правило и нормативный источник"));
-    box.append(el("p", null, [rule.document, rule.point].filter(Boolean).join(" — ") || "Источник не указан"));
+    box.append(x, el("h3", null, v.type || "Событие"), el("p", "muted", "Нормативное основание"));
+    box.append(el("p", null, [rule.document, rule.point].filter(Boolean).join(" — ") || "Нормативное основание требует дополнительной проверки."));
     if (rule.text) box.append(el("blockquote", null, rule.text));
     if (rule.url && /^https:\/\//.test(rule.url)) {
       const a = el("a", null, "Открыть документ"); a.href = rule.url; a.target = "_blank"; a.rel = "noopener noreferrer";
       box.append(a);
     }
-    box.append(el("p", "src", "Подсказка для проверки человеком, а не юридическое заключение."));
+    box.append(el("p", "src", "Результаты автоматического анализа носят предварительный характер и требуют проверки специалистом."));
     m.append(box);
     const close = () => { m.remove(); document.removeEventListener("keydown", onKey); };
     const onKey = (e) => e.key === "Escape" && close();
@@ -121,10 +121,10 @@
   function card(v, i, total) {
     const c = el("article", "glass card");
     const head = el("div", "card-head");
-    const title = el("h3", null, (total > 1 ? (i + 1) + ". " : "") + (v.type || "Нарушение"));
+    const title = el("h3", null, (total > 1 ? (i + 1) + ". " : "") + (v.type || "Событие"));
     const seek = el("button", "btn btn--ghost btn--small", "Перейти к " + fmt(v.timecode_sec));
     seek.type = "button";
-    seek.title = "Перемотать видео на этот момент";
+    seek.title = "Перейти к моменту события";
     seek.addEventListener("click", () => {
       if (window.seekTo) window.seekTo(v.timecode_sec);
       const p = document.querySelector(".player");
@@ -149,10 +149,10 @@
     if (frames.children.length) c.append(frames);
 
     const rule = el("div", "rule");
-    rule.append(el("b", null, "Правило и источник"),
+    rule.append(el("b", null, "Нормативное основание"),
       el("span", null, ruleText(v.rule)));
     if (ruleText(v.rule)) {
-      const more = el("button", "btn btn--ghost btn--small", "Подробнее о правиле");
+      const more = el("button", "btn btn--ghost btn--small", "Подробнее об основании");
       more.type = "button"; more.addEventListener("click", () => openModal(v));
       rule.append(more);
     }
@@ -170,14 +170,14 @@
     left.append(el("div", "eyebrow", "Результат проверки"), el("h2", null, TEXT[bad ? "violation" : "no_violation"]));
     head.append(left);
     if (list.length > 1) { // счётчик нужен только если нарушений несколько
-      const cnt = el("div", "counter", String(list.length)); cnt.title = "Найдено нарушений"; head.append(cnt);
+      const cnt = el("div", "counter", String(list.length)); cnt.title = "Количество обнаруженных событий"; head.append(cnt);
     }
     root.append(head);
 
     const wrap = el("div", "results");
     list.forEach((v, i) => wrap.append(card(v, i, list.length)));
     root.append(wrap, el("p", "notice", NOTICE));
-    if (!bad) root.append(el("p", "notice", "Отсутствие находок не гарантирует полного отсутствия нарушений."));
+    if (!bad) root.append(el("p", "notice", "Отсутствие обнаруженных признаков не гарантирует отсутствия нарушений."));
   };
 })();
 
@@ -216,7 +216,7 @@
     const probe = document.createElement("video");
     // .mov (QuickTime): не все браузеры его проигрывают — тогда заглушка, результат всё равно виден
     if (!file || !(probe.canPlayType("video/quicktime") || probe.canPlayType("video/mp4"))) {
-      return stub("Ваш браузер не воспроизводит .mov. Результаты анализа ниже — таймкоды и кадры — доступны как обычно.");
+      return stub("Браузер не поддерживает воспроизведение этого видеофайла. Время событий и кадры доступны в результатах анализа ниже.");
     }
     url = URL.createObjectURL(file);
     video = probe;
@@ -225,11 +225,11 @@
     video.preload = "metadata";
     video.setAttribute("aria-label", "Загруженное видео");
     video.addEventListener("error", () =>
-      stub("Не удалось воспроизвести видео в браузере. Результаты анализа ниже доступны."));
+      stub("Не удалось воспроизвести видеозапись в браузере. Результаты анализа доступны ниже."));
 
     const bar = document.createElement("div");
     bar.className = "timeline";
-    bar.setAttribute("aria-label", "Шкала времени с метками нарушений");
+    bar.setAttribute("aria-label", "Шкала времени с отметками событий");
     const labels = document.createElement("div");
     labels.className = "timeline-labels";
     const playhead = document.createElement("div");
@@ -258,7 +258,7 @@
         m.type = "button";
         m.className = "marker";
         m.style.left = Math.min(100, (v.timecode_sec / dur) * 100) + "%";
-        m.title = (i + 1) + ". " + (v.type || "Нарушение") + " — " + v.timecode_sec + " с";
+        m.title = (i + 1) + ". " + (v.type || "Событие") + " — " + v.timecode_sec + " с";
         m.setAttribute("aria-label", m.title);
         m.addEventListener("click", () => window.seekTo(v.timecode_sec));
         bar.append(m);
@@ -301,12 +301,12 @@
   function setFile(f) {
     file = null; showError("");
     if (f) {
-      if (!/\.mov$/i.test(f.name)) showError("Нужен видеофайл в формате .mov");
-      else if (f.size > C.MAX_MB * 1024 * 1024) showError("Файл слишком большой: максимум " + C.MAX_MB + " МБ");
-      else if (f.size === 0) showError("Файл пустой");
+      if (!/\.mov$/i.test(f.name)) showError("Выберите видеофайл в формате MOV.");
+      else if (f.size > C.MAX_MB * 1024 * 1024) showError("Размер файла превышает допустимый: " + C.MAX_MB + " МиБ");
+      else if (f.size === 0) showError("Выбранный файл пуст. Выберите другую видеозапись.");
       else file = f;
     }
-    fname.textContent = file ? file.name + " · " + (file.size / 1048576).toFixed(1) + " МБ" : "";
+    fname.textContent = file ? file.name + " · " + (file.size / 1048576).toFixed(1) + " МиБ" : "";
     info.classList.toggle("is-hidden", !file);
     check.disabled = !file;
   }
@@ -331,11 +331,11 @@
 
   /* ---------- анализ: реальный API ---------- */
   async function analyzeApi(f, r) {
-    setStatus("Загружаем видео…");
+    setStatus("Загрузка видеозаписи…");
     const fd = new FormData(); fd.append("file", f);
     const created = await api.request("/analyze", { method: "POST", body: fd }, r.signal);
-    if (!created || !created.job_id) throw new Error("Сервис не вернул идентификатор задачи.");
-    setStatus("Видео загружено. Ожидаем обработки на сервере…");
+    if (!created || !created.job_id) throw new Error("Не удалось запустить анализ видеозаписи. Повторите попытку позже.");
+    setStatus("Выполняется анализ видеозаписи. Это может занять несколько минут.");
     let fails = 0;
     for (;;) {
       await sleep(C.POLL_MS, r.signal);
@@ -349,8 +349,8 @@
         continue;
       }
       if (data.status === "done") return window.validateAnalysisResult(data);
-      if (data.status === "failed") throw new Error("Сервис не смог обработать видео. Проверьте файл и настройку локальных моделей или попробуйте позже.");
-      if (data.status !== "processing") throw new Error("Сервис вернул неизвестный статус задачи.");
+      if (data.status === "failed") throw new Error("Не удалось завершить анализ видеозаписи. Повторите попытку позже.");
+      if (data.status !== "processing") throw new Error("Не удалось получить статус анализа. Повторите попытку позже.");
     }
   }
 
@@ -385,7 +385,7 @@
         window.initPlayer(f, $("player"), list);
         window.renderResult(data, $("result"));
       } catch (e) {
-        show("upload"); showError("Не удалось отобразить результат. Попробуйте ещё раз.");
+        show("upload"); showError("Не удалось отобразить результаты анализа. Повторите попытку позже.");
         return;
       }
       show("result");
@@ -394,14 +394,14 @@
       finish(r);
       if (e && e.name === "AbortError") return; // пользователь нажал «Отменить»
       show("upload");
-      showError((e && e.message) || "Произошла неизвестная ошибка.");
+      showError((e && e.message) || "Не удалось завершить анализ видеозаписи. Повторите попытку позже.");
     }
   }
 
   check.addEventListener("click", start);
   $("cancel").addEventListener("click", () => {
     if (run) run.controller.abort();
-    show("upload"); showError("Ожидание остановлено в браузере. Сервер может продолжить обработку загруженного видео.");
+    show("upload"); showError("Ожидание остановлено. Обработка видеозаписи на сервере может продолжиться.");
   });
   window.addEventListener("pagehide", () => { if (run) run.controller.abort(); });
   $("again").addEventListener("click", () => {

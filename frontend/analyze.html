@@ -12,25 +12,25 @@
 
   <section class="glass hero hero--compact">
     <h1>Проверка видео с помощью <span>ИИ</span></h1>
-    <p>Загрузите запись работы кассира в формате .mov. Сервис найдёт признаки возможных нарушений, покажет время события, кадры-доказательства. Нормативный источник показывается только после подтверждения.</p>
+    <p>Выберите видеофайл в формате MOV. Сервис покажет обнаруженные события, их время, соответствующие кадры и описание возможного риска. Нормативное основание требует дополнительной проверки.</p>
   </section>
 
   <section id="screen-upload" class="screen upload">
     <label class="dropzone" id="dropzone" for="file">
-      <div><h2>Перетащите видео сюда</h2><p class="muted">или нажмите, чтобы выбрать файл .mov</p></div>
+      <div><h2>Перетащите видеофайл сюда</h2><p class="muted">или нажмите, чтобы выбрать файл в формате MOV</p></div>
       <input id="file" type="file" accept=".mov,video/quicktime" hidden>
     </label>
     <div id="fileinfo" class="fileinfo is-hidden"><span id="filename"></span>
-      <button type="button" class="btn btn--ghost btn--small" id="clear">Убрать</button></div>
+      <button type="button" class="btn btn--ghost btn--small" id="clear">Снять выбор</button></div>
     <div id="error" class="error is-hidden" role="alert"></div>
     <button type="button" id="check" class="btn btn--lg" disabled>Проверить видео</button>
   </section>
 
   <section id="screen-processing" class="screen glass processing is-hidden" aria-live="polite">
     <div class="spinner"></div>
-    <h2 id="status">Анализируем видео…</h2>
+    <h2 id="status">Выполняется анализ видеозаписи. Это может занять несколько минут.</h2>
     <div class="timer" id="timer">00:00</div>
-    <p class="muted">Анализ занимает до 270 секунд после начала обработки. При очереди ожидание дольше. Процент прогресса сервер не возвращает.</p>
+    <p class="muted">Анализ занимает до 270 секунд после начала обработки. Время ожидания в очереди не входит в этот срок.</p>
     <button type="button" class="btn btn--ghost" id="cancel">Остановить ожидание</button>
   </section>
 

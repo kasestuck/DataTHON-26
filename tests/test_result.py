@@ -45,7 +45,7 @@ def test_pending_rule_does_not_add_unverified_source(tmp_path):
     (tmp_path / "violation_types.json").write_text('{"counter_event": {"name": "Событие", "description": "Признаки"}}', encoding="utf-8")
     (tmp_path / "rules.json").write_text('{"counter_event": {"status": "needs_review"}}', encoding="utf-8")
     result = format_result([Finding()], tmp_path)
-    assert result["violations"][0]["description"] == Finding.description
+    assert result["violations"][0]["description"] == Finding.description + " Нормативное основание требует дополнительной проверки."
 
 
 def test_missing_rule_keeps_violation_without_legal_claim(tmp_path):
@@ -53,7 +53,7 @@ def test_missing_rule_keeps_violation_without_legal_claim(tmp_path):
     (tmp_path / "rules.json").write_text("{}", encoding="utf-8")
     result = format_result([Finding()], tmp_path)
     assert result["verdict"] == "violation"
-    assert result["violations"][0]["description"] == Finding.description
+    assert result["violations"][0]["description"] == Finding.description + " Нормативное основание требует дополнительной проверки."
 
 
 def test_unknown_violation_type_is_rejected(tmp_path):

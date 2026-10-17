@@ -24,6 +24,7 @@ services:
       - ./backend/data/violation_types.json:/app/backend/data/violation_types.json:ro
       - ./backend/data/violation_type_policy.json:/app/backend/data/violation_type_policy.json:ro
       - ./backend/data/rules.json:/app/backend/data/rules.json:ro
+      - ./backend/data/risk_references.json:/app/backend/data/risk_references.json:ro
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
       interval: 30s

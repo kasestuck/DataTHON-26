@@ -4,6 +4,8 @@ import math
 from pathlib import Path
 
 from .rules import load_rules
+from .risk_catalog import load_risk_catalog, risk_description
+from .display_text import normalize_observation, save_description_diagnostics
 
 
 def _value(item, name):
@@ -52,20 +54,30 @@ def _validated_finding(finding):
     return type_id, timecode, description, frames
 
 
-def format_result(findings: list, catalog_dir: Path) -> dict:
+def format_result(findings: list, catalog_dir: Path, *, diagnostics_path: Path | None = None) -> dict:
     if not isinstance(findings, list):
         raise ValueError("analyze_video must return a list of Finding")
     types = _read_catalog(catalog_dir / "violation_types.json")
     rules = load_rules(catalog_dir)
+    risks = load_risk_catalog(catalog_dir, types, rules)
     violations = []
+    observations = []
     for finding in findings:
         type_id, timecode, description, frames = _validated_finding(finding)
+        original_description = description
+        description = normalize_observation(description)
+        observations.append({"violation_type": type_id, "original_description": original_description,
+                             "display_description": description})
         if type_id not in types:
             raise ValueError(f"violation_type {type_id!r} is absent from violation_types.json")
         type_info = types[type_id]
         name = type_info["name"]
         rule = rules.get(type_id)
-        if rule and rule["status"] == "verified":
+        risk = risks.get(type_id)
+        verified = bool(rule and rule["status"] == "verified" and rule.get("section")
+                        and (risk is None or risk["status"] == "verified"))
+        description = risk_description(description, risk, verified=verified)
+        if verified:
             source = rule["document"]
             if rule.get("section"):
                 source += f", раздел/пункт {rule['section']}"
@@ -80,4 +92,6 @@ def format_result(findings: list, catalog_dir: Path) -> dict:
                 "evidence_frames": frames,
             }
         )
+    if diagnostics_path is not None and observations:
+        save_description_diagnostics(diagnostics_path, observations)
     return {"verdict": "violation" if violations else "no_violation", "violations": violations}

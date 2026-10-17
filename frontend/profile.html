@@ -5,12 +5,12 @@
   <header id="site-header"></header>
   <section class="glass">
     <div class="profile-card"><div class="avatar" id="av"></div>
-      <div><h1 id="nm"></h1><p class="muted">Проверяющий · Forte Vision</p></div></div>
-    <label class="field">Как к вам обращаться
+      <div><h1 id="nm"></h1><p class="muted">Специалист · Forte Vision</p></div></div>
+    <label class="field">Как к вам обращаться?
       <input id="name" maxlength="40" placeholder="Например, Айгерим"></label>
     <button class="btn" id="save" type="button">Сохранить</button>
     <p class="muted" id="msg" role="status" style="margin:10px 0 0"></p>
-    <p class="notice" style="margin-top:16px">Имя хранится только в этом браузере. Вход в систему, история проверок и экспорт отчётов в этой версии не нужны по ТЗ.</p>
+    <p class="notice" style="margin-top:16px">Имя сохраняется только в этом браузере и не передаётся на сервер.</p>
   </section>
 </main>
 <script src="app.js"></script>
@@ -22,17 +22,17 @@
   try { saved = localStorage.getItem("fv_name"); } catch (e) {}
   saved = (saved || "").trim();
   function show(n) { nm.textContent = n; av.textContent = n[0].toUpperCase(); }
-  show(saved || "Проверяющий");
+  show(saved || "Специалист");
   input.value = saved;
   function save() {
     var n = input.value.trim();
     try { localStorage.setItem("fv_name", n); } catch (e) { msg.textContent = "Не удалось сохранить имя в этом браузере."; return; }
-    var shown = n || "Проверяющий";
+    var shown = n || "Специалист";
     show(shown);
     var hb = document.querySelector("#site-header .avatar"), hw = document.querySelector("#site-header .who");
     if (hb) hb.textContent = shown[0].toUpperCase();
     if (hw) hw.textContent = shown;
-    msg.textContent = "Сохранено";
+    msg.textContent = "Имя сохранено.";
   }
   btn.addEventListener("click", save);
   input.addEventListener("keydown", function (e) { if (e.key === "Enter") save(); });

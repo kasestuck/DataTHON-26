@@ -37,7 +37,7 @@ def test_worker_marks_analyzer_failure_and_continues(tmp_path):
     worker = JobWorker(store, settings)
     assert worker.process_next() is True
     assert store.get(first)["status"] == "failed"
-    assert store.get(first)["error"] == "Analysis failed"
+    assert store.get(first)["error"] == "Не удалось завершить анализ видеозаписи. Повторите попытку позже."
     assert worker.process_next() is True
     assert store.get(second)["status"] == "failed"
 
@@ -61,7 +61,7 @@ def test_worker_times_out_hung_analyzer(tmp_path):
     JobWorker(store, settings).process_next()
     assert time.monotonic() - started < 3
     assert store.get(job_id)["status"] == "failed"
-    assert "timeout" in store.get(job_id)["error"].lower()
+    assert store.get(job_id)["error"] == "Не удалось завершить анализ видеозаписи. Повторите попытку позже."
 
 
 def test_store_recovers_unfinished_job_after_restart(tmp_path):
@@ -110,7 +110,7 @@ def test_worker_serializes_a_synthetic_finding_without_rule(tmp_path):
     assert result["violations"] == [{
         "type": "Событие у кассы",
         "timecode_sec": 12.5,
-        "description": "В кадре появился второй человек.",
+        "description": "В кадре появился второй человек. Нормативное основание требует дополнительной проверки.",
         "evidence_frames": [{"timestamp_sec": 12.5, "image_base64": "/9j/2Q=="}],
     }]
 
@@ -133,7 +133,7 @@ def test_timeout_stops_nested_analyzer_process(tmp_path):
     JobWorker(store, settings).process_next()
     assert Path(str(video) + '.started').exists(), 'Nested child must actually start for this regression test'
     assert store.get(job_id)['status'] == 'failed'
-    assert 'timeout' in store.get(job_id)['error'].lower()
+    assert store.get(job_id)['error'] == 'Не удалось завершить анализ видеозаписи. Повторите попытку позже.'
     time.sleep(3)
     assert not Path(str(video) + '.survived').exists(), 'Nested worker escaped timeout cleanup'
 

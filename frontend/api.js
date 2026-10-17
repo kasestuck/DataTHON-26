@@ -2,12 +2,12 @@
 (function () {
   "use strict";
   function statusMessage(code) {
-    if (code === 401 || code === 403) return "Сессия недоступна. Обновите страницу и попробуйте снова.";
-    if (code === 413) return "Файл слишком большой для сервиса (максимум 100 МиБ).";
-    if ([400, 415, 422].includes(code)) return "Сервис не принял файл. Нужен непустой MOV-файл с корректным заголовком.";
-    if (code === 404) return "Задача не найдена. Попробуйте загрузить видео ещё раз.";
-    if (code === 429) return "Сервис перегружен. Попробуйте позже.";
-    return "Ошибка сервиса. Попробуйте позже.";
+    if (code === 401 || code === 403) return "Не удалось подтвердить доступ. Обновите страницу и повторите попытку.";
+    if (code === 413) return "Размер файла превышает допустимый: 100 МиБ.";
+    if ([400, 415, 422].includes(code)) return "Не удалось прочитать видеофайл. Выберите непустой файл в формате MOV.";
+    if (code === 404) return "Результат анализа не найден. Загрузите видеозапись повторно.";
+    if (code === 429) return "Сервис временно перегружен. Повторите попытку позже.";
+    return "Не удалось завершить анализ видеозаписи. Повторите попытку позже.";
   }
   async function jsonRequest(path, options, signal) {
     const controller = new AbortController();
@@ -22,11 +22,11 @@
         const error = new Error(statusMessage(response.status)); error.http = response.status; throw error;
       }
       try { return await response.json(); }
-      catch (_) { throw new Error("Сервис вернул неожиданный ответ."); }
+      catch (_) { throw new Error("Не удалось получить результат анализа. Повторите попытку позже."); }
     } catch (error) {
       if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
       if (error.http) throw error;
-      throw new Error("Сервис недоступен или не ответил вовремя. Проверьте подключение и повторите попытку.");
+      throw new Error("Не удалось связаться с сервисом. Проверьте подключение и повторите попытку.");
     } finally {
       clearTimeout(timer); signal?.removeEventListener("abort", abort);
     }
@@ -35,7 +35,7 @@
     let token = null;
     async function session(signal) {
       const data = await jsonRequest("/ui-api/v1/session", {}, signal);
-      if (typeof data.csrf_token !== "string" || !data.csrf_token) throw new Error("Не удалось открыть сессию.");
+      if (typeof data.csrf_token !== "string" || !data.csrf_token) throw new Error("Не удалось подтвердить доступ. Обновите страницу и повторите попытку.");
       token = data.csrf_token;
     }
     return {
@@ -62,7 +62,7 @@
     } catch (_) { return null; }
   };
   window.validateAnalysisResult = function (data) {
-    const invalid = () => { throw new Error("Сервис вернул некорректный результат анализа."); };
+    const invalid = () => { throw new Error("Не удалось получить результат анализа. Повторите попытку позже."); };
     if (!data || !["violation", "no_violation"].includes(data.verdict) || !Array.isArray(data.violations)) invalid();
     if ((data.verdict === "violation") !== (data.violations.length > 0)) invalid();
     for (const item of data.violations) {

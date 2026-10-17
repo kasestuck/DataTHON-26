@@ -73,11 +73,11 @@ def create_app(settings: Settings) -> FastAPI:
 
     def require_key(x_api_key: str | None = Header(default=None)) -> None:
         if x_api_key is None or not secrets.compare_digest(x_api_key, settings.api_key):
-            raise HTTPException(status_code=401, detail="Invalid API key")
+            raise HTTPException(status_code=401, detail="Доступ запрещён: проверьте ключ доступа.")
 
     async def save_upload(file: UploadFile):
         if Path(file.filename or "").suffix.lower() != ".mov":
-            raise HTTPException(status_code=400, detail="Only .mov files are supported")
+            raise HTTPException(status_code=400, detail="Выберите видеофайл в формате MOV.")
         path = uploads / f"{uuid4().hex}.mov"
         size = 0
         try:
@@ -85,10 +85,10 @@ def create_app(settings: Settings) -> FastAPI:
                 while chunk := await file.read(1024 * 1024):
                     size += len(chunk)
                     if size > settings.max_upload_bytes:
-                        raise HTTPException(status_code=413, detail="File too large")
+                        raise HTTPException(status_code=413, detail="Размер файла превышает допустимый.")
                     target.write(chunk)
             if size == 0:
-                raise HTTPException(status_code=400, detail="Empty file")
+                raise HTTPException(status_code=400, detail="Выбранный файл пуст. Выберите другую видеозапись.")
             with path.open("rb") as uploaded:
                 header = uploaded.read(12)
             atom_size = int.from_bytes(header[:4], "big") if len(header) >= 4 else 0
@@ -98,7 +98,7 @@ def create_app(settings: Settings) -> FastAPI:
                 or atom_size < 12
                 or atom_size > size
             ):
-                raise HTTPException(status_code=400, detail="Invalid MOV container header")
+                raise HTTPException(status_code=400, detail="Не удалось прочитать видеофайл. Выберите файл в формате MOV.")
             job_id = jobs.create(path)
             logger.info("Job %s queued: %d bytes", job_id, size)
             return {"job_id": job_id}
@@ -111,7 +111,7 @@ def create_app(settings: Settings) -> FastAPI:
     def job_status(job_id: str):
         job = jobs.get(job_id)
         if job is None:
-            raise HTTPException(status_code=404, detail="Job not found")
+            raise HTTPException(status_code=404, detail="Результат анализа не найден.")
         result = {"job_id": job_id, "status": job["status"]}
         if "result" in job:
             result.update(job["result"])
@@ -138,13 +138,13 @@ def create_app(settings: Settings) -> FastAPI:
             expected = (settings.public_origin or str(request.base_url)).rstrip("/")
             origin = request.headers.get("origin")
             if (origin is not None and origin != expected) or request.headers.get("sec-fetch-site") in {"cross-site", "same-site"}:
-                raise HTTPException(status_code=403, detail="Same-origin browser required")
+                raise HTTPException(status_code=403, detail="Не удалось подтвердить доступ. Обновите страницу и повторите попытку.")
 
         def require_browser(request: Request, x_csrf_token: str | None = Header(default=None)) -> None:
             require_same_origin(request)
             session_id = request.cookies.get("ui_session")
             if not session_id or not x_csrf_token or not secrets.compare_digest(x_csrf_token, csrf_for(session_id)):
-                raise HTTPException(status_code=403, detail="Browser session required")
+                raise HTTPException(status_code=403, detail="Не удалось подтвердить доступ. Обновите страницу и повторите попытку.")
 
         @app.get("/ui-api/v1/session")
         def browser_session(request: Request, response: Response):

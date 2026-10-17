@@ -10,6 +10,8 @@ import time
 from .config import Settings
 from .jobs import JobStore
 from .result import format_result
+from .display_text import ANALYSIS_ERROR
+from backend.analyzer.ipc import send_result
 
 
 logger = logging.getLogger("uvicorn.error")
@@ -21,9 +23,11 @@ def _analyze_child(target: str, video_path: str, connection) -> None:
             os.setsid()
         module_name, function_name = target.split(":", 1)
         analyzer = getattr(importlib.import_module(module_name), function_name)
-        connection.send(("ok", analyzer(video_path)))
+        message = ("ok", analyzer(video_path))
     except Exception as exc:
-        connection.send(("error", f"{type(exc).__name__}: {exc}"))
+        message = ("error", f"{type(exc).__name__}: {exc}")
+    try:
+        send_result(connection, message)
     finally:
         connection.close()
 
@@ -84,11 +88,12 @@ class JobWorker:
             status, payload = parent.recv()
             if status == "error":
                 raise RuntimeError(payload)
-            result = format_result(payload, self.settings.catalog_dir)
+            result = format_result(payload, self.settings.catalog_dir,
+                diagnostics_path=self.settings.data_dir / "diagnostics" / "text" / f"{job_id}.json")
             self.store.finish(job_id, result)
             logger.info("Job %s done in %.2fs", job_id, time.monotonic() - started)
-        except Exception as exc:
-            public_error = str(exc) if isinstance(exc, TimeoutError) else "Analysis failed"
+        except Exception:
+            public_error = ANALYSIS_ERROR
             self.store.fail(job_id, public_error)
             logger.exception("Job %s failed", job_id)
         finally:
