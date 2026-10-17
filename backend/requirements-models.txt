@@ -1,0 +1,8 @@
+# Optional; first install matching torch/torchvision CUDA wheels from pytorch.org.
+transformers==4.57.6
+huggingface-hub==0.36.0
+hf-xet==1.7.0
+safetensors==0.8.0
+Pillow>=10,<13
+lm-format-enforcer==0.11.3
+interegular==0.3.3

@@ -1,0 +1,146 @@
+{
+  "cash_split_transfer": {
+    "enabled": true,
+    "min_evidence": 2,
+    "min_context_sec": 1,
+    "review_status": "visual_detection_allowed",
+    "legal_basis_status": "unverified",
+    "legal_review_required": true
+  },
+  "identity_check_not_visible": {
+    "enabled": false,
+    "min_evidence": 3,
+    "min_context_sec": 10,
+    "review_status": "needs_review",
+    "legal_basis_status": "unverified",
+    "legal_review_required": true
+  },
+  "cash_left_unattended": {
+    "enabled": true,
+    "min_evidence": 2,
+    "min_context_sec": 3,
+    "review_status": "visual_detection_allowed",
+    "legal_basis_status": "unverified",
+    "legal_review_required": true
+  },
+  "key_left_in_safe": {
+    "enabled": true,
+    "min_evidence": 1,
+    "min_context_sec": 0,
+    "review_status": "visual_detection_allowed",
+    "legal_basis_status": "unverified",
+    "legal_review_required": true
+  },
+  "cash_bag_handling": {
+    "enabled": false,
+    "min_evidence": 3,
+    "min_context_sec": 6,
+    "review_status": "needs_review",
+    "legal_basis_status": "unverified",
+    "legal_review_required": true
+  },
+  "items_left_unattended": {
+    "enabled": true,
+    "min_evidence": 2,
+    "min_context_sec": 3,
+    "review_status": "visual_detection_allowed",
+    "legal_basis_status": "unverified",
+    "legal_review_required": true
+  },
+  "cash_bag_received_without_visible_check": {
+    "enabled": false,
+    "min_evidence": 3,
+    "min_context_sec": 10,
+    "review_status": "needs_review",
+    "legal_basis_status": "unverified",
+    "legal_review_required": true
+  },
+  "third_person_at_counter": {
+    "enabled": true,
+    "min_evidence": 2,
+    "min_context_sec": 1,
+    "review_status": "visual_detection_allowed",
+    "legal_basis_status": "unverified",
+    "legal_review_required": true
+  },
+  "safe_door_open": {
+    "enabled": true,
+    "min_evidence": 2,
+    "min_context_sec": 1,
+    "review_status": "visual_detection_allowed",
+    "legal_basis_status": "unverified",
+    "legal_review_required": true
+  },
+  "documents_left_unattended": {
+    "enabled": true,
+    "min_evidence": 2,
+    "min_context_sec": 3,
+    "review_status": "visual_detection_allowed",
+    "legal_basis_status": "unverified",
+    "legal_review_required": true
+  },
+  "workstation_left_active": {
+    "enabled": false,
+    "min_evidence": 2,
+    "min_context_sec": 3,
+    "review_status": "needs_review",
+    "legal_basis_status": "unverified",
+    "legal_review_required": true
+  },
+  "uncontrolled_access": {
+    "enabled": false,
+    "min_evidence": 2,
+    "min_context_sec": 3,
+    "review_status": "needs_review",
+    "legal_basis_status": "unverified",
+    "legal_review_required": true
+  },
+  "cash_room_door_left_open": {
+    "enabled": true,
+    "min_evidence": 2,
+    "min_context_sec": 1,
+    "review_status": "visual_detection_allowed",
+    "legal_basis_status": "unverified",
+    "legal_review_required": true
+  },
+  "customer_leaves_during_count": {
+    "enabled": true,
+    "min_evidence": 2,
+    "min_context_sec": 3,
+    "review_status": "visual_detection_allowed",
+    "legal_basis_status": "unverified",
+    "legal_review_required": true
+  },
+  "cash_not_secured_between_clients": {
+    "enabled": true,
+    "min_evidence": 3,
+    "min_context_sec": 6,
+    "review_status": "visual_detection_allowed",
+    "legal_basis_status": "unverified",
+    "legal_review_required": true
+  },
+  "personal_items_on_counter": {
+    "enabled": true,
+    "min_evidence": 1,
+    "min_context_sec": 0,
+    "review_status": "visual_detection_allowed",
+    "legal_basis_status": "unverified",
+    "legal_review_required": true
+  },
+  "banknotes_disordered": {
+    "enabled": false,
+    "min_evidence": 2,
+    "min_context_sec": 1,
+    "review_status": "needs_review",
+    "legal_basis_status": "unverified",
+    "legal_review_required": true
+  },
+  "drinks_at_workstation": {
+    "enabled": true,
+    "min_evidence": 1,
+    "min_context_sec": 0,
+    "review_status": "visual_detection_allowed",
+    "legal_basis_status": "unverified",
+    "legal_review_required": true
+  }
+}
