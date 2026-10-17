@@ -83,3 +83,22 @@ def test_browser_sessions_survive_second_tab_and_reject_cross_origin(site):
     for headers in ({"Origin": "https://foreign.example"}, {"Sec-Fetch-Site": "cross-site"}):
         assert site.get("/ui-api/v1/session", headers=headers).status_code == 403
         assert site.post("/ui-api/v1/analyze", headers=headers, files={"file": ("x.mov", MOV_BYTES)}).status_code == 403
+
+
+def test_https_browser_session_uses_secure_cookie_without_exposing_key(tmp_path):
+    origin = "https://jury-demo.example"
+    settings = Settings(api_key="synthetic-https-server-only-key", data_dir=tmp_path,
+                        frontend_dist=Path("frontend"), public_origin=origin, start_worker=False)
+    with TestClient(create_app(settings), base_url=origin) as browser:
+        session = browser.get("/ui-api/v1/session")
+        cookie = session.headers["set-cookie"].lower()
+        assert "secure" in cookie and "httponly" in cookie and "samesite=strict" in cookie
+        assert settings.api_key not in session.text + browser.get("/api.js").text
+        headers = {"Origin": origin, "X-CSRF-Token": session.json()["csrf_token"]}
+        uploaded = browser.post("/ui-api/v1/analyze", headers=headers, files={"file": ("x.mov", MOV_BYTES)})
+        assert uploaded.status_code == 200
+        job_id = uploaded.json()["job_id"]
+        assert browser.get(f"/ui-api/v1/jobs/{job_id}", headers=headers).json()["status"] == "processing"
+        assert browser.get(f"http://jury-demo.example/ui-api/v1/jobs/{job_id}", headers=headers).status_code == 403
+        assert browser.post("/api/v1/analyze", files={"file": ("x.mov", MOV_BYTES)}).status_code == 401
+        assert browser.get("/ui-api/v1/session", headers={"Origin": "https://foreign.example"}).status_code == 403
