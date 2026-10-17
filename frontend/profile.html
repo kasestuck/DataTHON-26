@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Профиль — Forte Vision</title><link rel="stylesheet" href="style.css"></head>
+<body><main class="page">
+  <header id="site-header"></header>
+  <section class="glass">
+    <div class="profile-card"><div class="avatar" id="av"></div>
+      <div><h1 id="nm"></h1><p class="muted">Проверяющий · Forte Vision</p></div></div>
+    <label class="field">Как к вам обращаться
+      <input id="name" maxlength="40" placeholder="Например, Айгерим"></label>
+    <button class="btn" id="save" type="button">Сохранить</button>
+    <p class="muted" id="msg" role="status" style="margin:10px 0 0"></p>
+    <p class="notice" style="margin-top:16px">Имя хранится только в этом браузере. Вход в систему, история проверок и экспорт отчётов в этой версии не нужны по ТЗ.</p>
+  </section>
+</main>
+<script src="app.js"></script>
+<script>
+(function () {
+  var input = document.getElementById("name"), nm = document.getElementById("nm"),
+      av = document.getElementById("av"), msg = document.getElementById("msg"), btn = document.getElementById("save");
+  var saved = null;
+  try { saved = localStorage.getItem("fv_name"); } catch (e) {}
+  saved = (saved || "").trim();
+  function show(n) { nm.textContent = n; av.textContent = n[0].toUpperCase(); }
+  show(saved || "Проверяющий");
+  input.value = saved;
+  function save() {
+    var n = input.value.trim();
+    try { localStorage.setItem("fv_name", n); } catch (e) { msg.textContent = "Не удалось сохранить имя в этом браузере."; return; }
+    var shown = n || "Проверяющий";
+    show(shown);
+    var hb = document.querySelector("#site-header .avatar"), hw = document.querySelector("#site-header .who");
+    if (hb) hb.textContent = shown[0].toUpperCase();
+    if (hw) hw.textContent = shown;
+    msg.textContent = "Сохранено";
+  }
+  btn.addEventListener("click", save);
+  input.addEventListener("keydown", function (e) { if (e.key === "Enter") save(); });
+})();
+</script></body></html>

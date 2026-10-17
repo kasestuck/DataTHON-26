@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Forte Vision — ИИ-помощник проверки кассовой дисциплины</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="splash" class="splash"><span class="logo-drop"></span><h1>Forte Vision</h1><div class="loadbar"></div></div>
+<main class="page">
+  <header id="site-header"></header>
+
+  <section class="glass hero">
+    <h1>ИИ-помощник для проверки <span>кассовой дисциплины</span> по видео</h1>
+    <p>Загрузите запись работы кассира: сервис найдёт признаки возможных нарушений, покажет время события, кадры-доказательства и правило с источником.</p>
+    <ul class="chips"><li>Всё локально</li><li>Формат .mov</li><li>До 5 минут</li><li>Решение принимает человек</li></ul>
+    <a class="btn btn--lg" href="analyze.html">Проверить видео</a>
+  </section>
+
+  <section class="glass home">
+    <h2>Как это работает</h2>
+    <ol class="steps">
+      <li class="step"><span class="step-num">1</span><h3>Загрузите видео</h3>
+        <p class="muted">Выберите запись в формате .mov. Файл обрабатывается локально, без отправки в облачные сервисы.</p></li>
+      <li class="step"><span class="step-num">2</span><h3>Дождитесь анализа</h3>
+        <p class="muted">Сервис показывает статус обработки. Обычно это занимает до нескольких минут, не дольше 5.</p></li>
+      <li class="step"><span class="step-num">3</span><h3>Изучите результат</h3>
+        <p class="muted">Вердикт, время события, описание и кадры-доказательства. Окончательное решение остаётся за человеком.</p></li>
+    </ol>
+  </section>
+
+  <section class="glass home">
+    <h2>Что вы увидите в результате</h2>
+    <div class="tiles">
+      <div class="tile"><h3>Вердикт</h3><p>«Нарушение не обнаружено» или «Обнаружены признаки возможных нарушений».</p></div>
+      <div class="tile"><h3>Время и описание</h3><p>Когда произошло событие и что видно на видео. Кнопка с таймкодом перематывает плеер на нужный момент.</p></div>
+      <div class="tile"><h3>Кадры-доказательства</h3><p>Кадры из нужного фрагмента, каждый можно открыть крупно.</p></div>
+      <div class="tile"><h3>Правило и источник</h3><p>Какое правило может быть нарушено и на какой документ оно опирается.</p></div>
+    </div>
+  </section>
+
+  <section class="glass home">
+    <h2>Важно знать</h2>
+    <p class="notice">Результат является подсказкой для проверки человеком, а не юридическим или дисциплинарным заключением.</p>
+    <ul class="plain">
+      <li>Анализ только визуальный: без звука и без распознавания лиц.</li>
+      <li>Возможны ложные срабатывания и пропуски, особенно на новых ракурсах камеры.</li>
+      <li>Подробнее об ограничениях, типах нарушений и источниках: <a href="about.html">О решении</a>.</li>
+    </ul>
+  </section>
+</main>
+<script src="app.js"></script>
+</body>
+</html>

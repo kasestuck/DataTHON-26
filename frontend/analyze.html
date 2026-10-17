@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ИИ-анализ — Forte Vision</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main class="page">
+  <header id="site-header"></header>
+
+  <section class="glass hero hero--compact">
+    <h1>Проверка видео с помощью <span>ИИ</span></h1>
+    <p>Загрузите запись работы кассира в формате .mov. Сервис найдёт признаки возможных нарушений, покажет время события, кадры-доказательства и правило с источником.</p>
+  </section>
+
+  <section id="screen-upload" class="screen upload">
+    <label class="dropzone" id="dropzone" for="file">
+      <div><h2>Перетащите видео сюда</h2><p class="muted">или нажмите, чтобы выбрать файл .mov</p></div>
+      <input id="file" type="file" accept=".mov,video/quicktime" hidden>
+    </label>
+    <div id="fileinfo" class="fileinfo is-hidden"><span id="filename"></span>
+      <button type="button" class="btn btn--ghost btn--small" id="clear">Убрать</button></div>
+    <div id="error" class="error is-hidden" role="alert"></div>
+    <button type="button" id="check" class="btn btn--lg" disabled>Проверить видео</button>
+  </section>
+
+  <section id="screen-processing" class="screen glass processing is-hidden" aria-live="polite">
+    <div class="spinner"></div>
+    <h2 id="status">Анализируем видео…</h2>
+    <div class="timer" id="timer">00:00</div>
+    <p class="muted">Обычно занимает до нескольких минут. Не закрывайте страницу.</p>
+    <button type="button" class="btn btn--ghost" id="cancel">Отменить</button>
+  </section>
+
+  <section id="screen-result" class="screen is-hidden">
+    <div id="player"></div>
+    <div id="result"></div>
+    <div class="again"><button type="button" class="btn" id="again">Проверить другое видео</button></div>
+  </section>
+</main>
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
