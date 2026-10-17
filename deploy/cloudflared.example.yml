@@ -1,0 +1,8 @@
+# Copy outside Git, replace placeholders, and keep tunnel credentials private.
+tunnel: <TUNNEL_UUID>
+credentials-file: <ABSOLUTE_PATH_TO_CREDENTIALS_JSON>
+
+ingress:
+  - hostname: <PUBLIC_HOSTNAME>
+    service: http://127.0.0.1:8000
+  - service: http_status:404

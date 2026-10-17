@@ -1,0 +1,56 @@
+{
+  "banknotes_disordered": {
+    "status": "needs_review"
+  },
+  "cash_bag_handling": {
+    "status": "needs_review"
+  },
+  "cash_bag_received_without_visible_check": {
+    "status": "needs_review"
+  },
+  "cash_left_unattended": {
+    "status": "needs_review"
+  },
+  "cash_not_secured_between_clients": {
+    "status": "needs_review"
+  },
+  "cash_room_door_left_open": {
+    "status": "needs_review"
+  },
+  "cash_split_transfer": {
+    "status": "needs_review"
+  },
+  "customer_leaves_during_count": {
+    "status": "needs_review"
+  },
+  "documents_left_unattended": {
+    "status": "needs_review"
+  },
+  "drinks_at_workstation": {
+    "status": "needs_review"
+  },
+  "identity_check_not_visible": {
+    "status": "needs_review"
+  },
+  "items_left_unattended": {
+    "status": "needs_review"
+  },
+  "key_left_in_safe": {
+    "status": "needs_review"
+  },
+  "personal_items_on_counter": {
+    "status": "needs_review"
+  },
+  "safe_door_open": {
+    "status": "needs_review"
+  },
+  "third_person_at_counter": {
+    "status": "needs_review"
+  },
+  "uncontrolled_access": {
+    "status": "needs_review"
+  },
+  "workstation_left_active": {
+    "status": "needs_review"
+  }
+}
