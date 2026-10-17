@@ -39,7 +39,7 @@ def test_cuda_worker_bounds_windows_cpu_threads_before_loading_models(
 
     monkeypatch.setattr(detector, "LocalRTDetr", load_detector)
     monkeypatch.setattr(vlm, "LocalTransformersVLM", load_vlm)
-    monkeypatch.setattr(pipeline, "Analyzer", lambda *args: SimpleNamespace(
+    monkeypatch.setattr(pipeline, "Analyzer", lambda *args, **kwargs: SimpleNamespace(
         analyze=lambda path: pipeline.AnalysisReport(is_mock=True, timings={"total_sec": 0.})))
     connection = SimpleNamespace(send=messages.append, close=lambda: None)
     config = AnalyzerConfig(device=device, temp_dir=str(tmp_path))
@@ -48,7 +48,11 @@ def test_cuda_worker_bounds_windows_cpu_threads_before_loading_models(
         pipeline._production_worker(connection, str(synthetic_video), config)
         assert observed == [("detector", expected_threads), ("vlm", expected_threads)]
         assert messages[0][0] is True
-        assert (config.vlm_timeout_sec, config.timeout_sec) == (35., 260.)
+        assert (config.vlm_timeout_sec, config.timeout_sec) == (60., 260.)
+        import json
+        runtime = json.loads(next(tmp_path.glob('diagnostics/runtime_*.json')).read_text())
+        assert runtime['cpu_threads'] == expected_threads
+        assert 'video_path' not in runtime and 'prompt' not in runtime
     finally:
         torch.set_num_threads(previous)
 
@@ -57,8 +61,9 @@ def test_public_api_and_analyzer_imports_preserve_host_cpu_pool():
     pytest.importorskip("torch")
     code = (
         "import torch; torch.set_num_threads(4); "
-        "import backend.api.app; import backend.analyzer; "
+        "interop = torch.get_num_interop_threads(); import backend.api.app; import backend.analyzer; "
         "assert torch.get_num_threads() == 4; "
+        "assert torch.get_num_interop_threads() == interop; "
         "assert not torch.cuda.is_initialized()"
     )
     subprocess.run([sys.executable, "-c", code], check=True, timeout=30,

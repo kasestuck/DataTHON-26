@@ -125,27 +125,33 @@ async function fixtureTests(browser) {
 async function realVideo(browser, path, name) {
   const context=await browser.newContext({viewport:{width:390,height:844}}); const page=await context.newPage();
   const before=crypto.createHash('sha256').update(fs.readFileSync(path)).digest('hex');
-  let uploaded=0,polled=0,last=null,unsafe=0;const errors=[];let external=0;
+  let uploaded=0,polled=0,last=null,unsafe=0;const errors=[];let external=0;const responseTasks=[];
   page.on('pageerror',()=>errors.push('Browser error'));
   await context.route('**/*',route=>{
     if (new URL(route.request().url()).origin!==base) {external++;return route.abort();}
     if (route.request().headers()['x-api-key']) unsafe++;
     return route.continue();
   });
-  page.on('response',async response=>{
+  page.on('response',response=>{
     if(response.url().endsWith('/ui-api/v1/analyze')&&response.ok())uploaded++;
-    if(response.url().includes('/ui-api/v1/jobs/')&&response.ok()) {polled++;last=await response.json();}
+    if(response.url().includes('/ui-api/v1/jobs/')&&response.ok()) {
+      polled++;responseTasks.push(response.json().then(value=>{last=value;}));
+    }
   });
   const started=Date.now();
   try {
     await page.goto(base+'/analyze.html');await start(page,path);
     await page.waitForFunction(()=>!document.querySelector('#screen-result').classList.contains('is-hidden')||!document.querySelector('#error').classList.contains('is-hidden'),{},{timeout:310000});
+    // DOM updates and this independent response observer complete asynchronously.
+    // Await the response body before checking the terminal job status.
+    await Promise.all(responseTasks);
     assert.equal(uploaded,1);assert(polled>0);assert.equal(unsafe,0);assert.equal(external,0);assert.deepEqual(errors,[]);
     assert(last,'Missing job response');
     if(name==='corrupt') {
       assert.equal(last.status,'failed');assert(!last.verdict);assert(await page.locator('#screen-result').isHidden());
     } else {
-      assert.equal(last.status,'done');assert(await page.locator('#screen-result').isVisible());
+      assert.equal(last.status,'done', 'API status: '+last.status+'; UI error: '+await page.locator('#error').textContent());
+      assert(await page.locator('#screen-result').isVisible());
       if(name==='positive')assert.equal(last.verdict,'violation');
       assert.equal(await page.locator('.card').count(),last.violations.length);
       await page.waitForFunction(()=>[...document.querySelectorAll('.frame img')].every(i=>i.complete&&i.naturalWidth>0));

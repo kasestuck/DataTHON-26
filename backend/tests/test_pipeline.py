@@ -156,3 +156,46 @@ def test_model_load_oom_is_normalized_for_callers():
     assert _worker_error(MemoryError())[1] == "InferenceError"
     oom = type("OutOfMemoryError", (RuntimeError,), {})
     assert _worker_error(oom("synthetic CUDA allocation"))[1] == "InferenceError"
+
+
+def test_window_budget_uses_absolute_job_deadline(synthetic_video, config):
+    deadline = time.monotonic() + 12
+
+    class RecordingVLM(MockVLM):
+        def set_window_context(self, **context):
+            self.context = context
+
+        def infer(self, images, prompt, timeout_sec):
+            assert 0 < timeout_sec <= 7  # Five seconds stay available for finishing.
+            assert self.context["analysis_deadline"] == deadline
+            assert self.context["window"] == 1 and self.context["attempt"] == 0
+            return super().infer(images, prompt, timeout_sec)
+
+    report = Analyzer(MockDetector(), RecordingVLM(), config, allow_mock=True,
+                      deadline=deadline).analyze(str(synthetic_video))
+    assert report.findings == []
+
+
+@pytest.mark.parametrize("remaining", [-1, 4])
+def test_spent_job_budget_never_reaches_vlm_or_becomes_negative(synthetic_video, config, remaining):
+    class UncalledVLM(MockVLM):
+        def infer(self, *_):
+            pytest.fail("A spent job budget must fail before inference")
+
+    with pytest.raises(AnalysisTimeoutError):
+        Analyzer(MockDetector(), UncalledVLM(), config, allow_mock=True,
+                 deadline=time.monotonic() + remaining).analyze(str(synthetic_video))
+
+
+def test_window_timeout_is_not_retried_or_returned_as_partial_result(synthetic_video, config):
+    class TimeoutVLM(MockVLM):
+        calls = 0
+
+        def infer(self, *_):
+            self.calls += 1
+            raise AnalysisTimeoutError("Synthetic window deadline")
+
+    vlm = TimeoutVLM()
+    with pytest.raises(AnalysisTimeoutError, match="window deadline"):
+        Analyzer(MockDetector(), vlm, config, allow_mock=True).analyze(str(synthetic_video))
+    assert vlm.calls == 1

@@ -125,3 +125,50 @@ def test_cached_grammar_masks_preserve_logits_and_bound_cache():
     allowed[:] = [4]
     processor(torch.tensor([[0]]), logits.clone())
     assert len(processor.masks) == 2
+
+
+@pytest.mark.parametrize("raw,complete", [(json.dumps(response()), True), ('{"observed_action":"unfinished', False)])
+def test_adapter_generation_boundary_and_private_metadata(monkeypatch, tmp_path, raw, complete):
+    """Synthetic generation boundary only; not a real-model quality test."""
+    from types import SimpleNamespace
+    import io
+    import os
+    from PIL import Image
+    torch = pytest.importorskip("torch")
+    transformers = pytest.importorskip("transformers")
+    integration = pytest.importorskip("lmformatenforcer.integrations.transformers")
+    monkeypatch.setattr(integration, "build_transformers_prefix_allowed_tokens_fn", lambda *args: None)
+    adapter = LocalTransformersVLM.__new__(LocalTransformersVLM)
+    adapter.torch, adapter.device = torch, "cpu"
+    adapter.trace_dir, adapter.call_number = tmp_path, 0
+    adapter.window_context = {}
+    adapter.response_schema = generation_schema(CATALOG, [0., 1., 2., 3.])
+    adapter.enforcer_tokenizer = None
+    adapter.release_cuda_cache = False
+    adapter.processor = SimpleNamespace(
+        apply_chat_template=lambda *args, **kwargs: transformers.BatchEncoding({"input_ids": torch.tensor([[1]])}),
+        batch_decode=lambda *args, **kwargs: [raw],
+        tokenizer=SimpleNamespace(decode=lambda *args, **kwargs: raw))
+
+    def generate(**kwargs):
+        assert kwargs['max_new_tokens'] == 192 and kwargs['do_sample'] is False
+        generated = torch.ones((1, 193), dtype=torch.long)
+        kwargs['stopping_criteria'](generated, None)
+        return generated
+
+    adapter.model = SimpleNamespace(generate=generate)
+    image = io.BytesIO()
+    Image.new('RGB', (16, 16)).save(image, format='JPEG')
+    if complete:
+        assert json.loads(adapter.infer([image.getvalue()], "PRIVATE PROMPT", 10)) == response()
+    else:
+        with pytest.raises(InferenceError, match="complete JSON"):
+            adapter.infer([image.getvalue()], "PRIVATE PROMPT", 10)
+    metadata_text = (tmp_path / f'vlm_{os.getpid()}.jsonl').read_text()
+    metadata = json.loads(metadata_text)
+    assert metadata['complete_json'] is complete
+    assert metadata['stop_reason'] == ('complete_json' if complete else 'token_limit')
+    assert metadata['frame_count'] == 1 and metadata['frame_sizes'] == [[16, 16]]
+    assert 'PRIVATE PROMPT' not in metadata_text and 'observed_action' not in metadata_text
+    events = [json.loads(line)['event'] for line in (tmp_path / f'window_events_{os.getpid()}.jsonl').read_text().splitlines()]
+    assert events == ['started', 'ended']

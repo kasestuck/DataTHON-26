@@ -21,7 +21,7 @@ class AnalyzerConfig:
     max_windows: int = 12
     max_sample_frames: int = 600
     timeout_sec: float = 260.
-    vlm_timeout_sec: float = 35.
+    vlm_timeout_sec: float = 60.
     context_sec: float = 10.
     policy_path: str | None = None
     dedup_sec: float = 4.

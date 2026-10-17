@@ -2,6 +2,7 @@
 from dataclasses import dataclass
 from copy import deepcopy
 from collections import OrderedDict
+from datetime import datetime, timezone
 import io
 import json
 import math
@@ -278,6 +279,7 @@ class LocalTransformersVLM:
 
     def __init__(self, model_dir, device="cuda", trace_dir=None, *, release_cuda_cache=False):
         self.trace_dir, self.call_number = Path(trace_dir) if trace_dir else None, 0
+        self.window_context = {}
         self.release_cuda_cache = release_cuda_cache
         self.response_schema = deepcopy(RESPONSE_SCHEMA)
         os.environ["LMFE_STRICT_JSON_FIELD_ORDER"] = "true"
@@ -309,6 +311,10 @@ class LocalTransformersVLM:
     def set_response_schema(self, schema):
         self.response_schema = schema
 
+    def set_window_context(self, *, window, attempt, analysis_deadline):
+        # Metadata only: never include filenames, labels, prompts or descriptions.
+        self.window_context = dict(window=window, attempt=attempt, analysis_deadline=analysis_deadline)
+
     def infer(self, images, prompt, timeout_sec):
         from PIL import Image
         from transformers import LogitsProcessorList, StoppingCriteria, StoppingCriteriaList
@@ -318,57 +324,122 @@ class LocalTransformersVLM:
             raise ValueError("VLM requires 1–8 images and a positive timeout")
         deadline = time.monotonic() + timeout_sec
         started = time.monotonic()
+        started_utc = datetime.now(timezone.utc).isoformat()
+        self.call_number += 1
         processor = self.processor
         prefix_length = 0
+        image_grid = None
+        generated = None
+        raw = ""
+        timings = {}
+        stop_reason = "exception"
+        exception_type = None
+        grammar_seconds = 0.
+        stopping_seconds = 0.
 
         class Deadline(StoppingCriteria):
             def __call__(self, input_ids, scores, **kwargs):
+                nonlocal stopping_seconds, stop_reason
+                tick = time.monotonic()
                 if time.monotonic() >= deadline:
+                    stop_reason = "deadline"
+                    stopping_seconds += time.monotonic() - tick
                     return True
                 text = processor.tokenizer.decode(input_ids[0, prefix_length:].tolist(), skip_special_tokens=True)
-                return complete_json_object(text)
+                complete = complete_json_object(text)
+                if complete:
+                    stop_reason = "complete_json"
+                stopping_seconds += time.monotonic() - tick
+                return complete
 
         pictures = [Image.open(io.BytesIO(data)).convert("RGB") for data in images]
         messages = [{"role": "user", "content": [{"type": "image", "image": picture} for picture in pictures]
                      + [{"type": "text", "text": prompt}]}]
+        if self.trace_dir:
+            self.trace_dir.mkdir(parents=True, exist_ok=True)
+            with (self.trace_dir / f"window_events_{os.getpid()}.jsonl").open("a", encoding="utf-8") as log:
+                log.write(json.dumps({"event": "started", "call": self.call_number,
+                    "window": self.window_context.get("window", self.call_number),
+                    "attempt": self.window_context.get("attempt", 0), "started_utc": started_utc,
+                    "frame_count": len(pictures), "frame_sizes": [list(p.size) for p in pictures],
+                    "window_budget_sec": timeout_sec,
+                    "analysis_remaining_sec": self.window_context.get("analysis_deadline", deadline) - started}) + "\n")
         try:
+            tick = time.monotonic()
             inputs = self.processor.apply_chat_template(messages, tokenize=True, add_generation_prompt=True,
                 return_dict=True, return_tensors="pt").to(self.device)
+            timings["preprocessing_sec"] = time.monotonic() - tick
             prefix_length = inputs["input_ids"].shape[1]
+            image_grid = inputs.get("image_grid_thw")
+            image_grid = image_grid.tolist() if image_grid is not None else None
+            tick = time.monotonic()
             grammar_config = CharacterLevelParserConfig(max_consecutive_whitespaces=1, force_json_field_order=True)
             grammar_config.alphabet += "".join(chr(i) for i in range(0x400, 0x500))
             parser = JsonSchemaParser(self.response_schema, config=grammar_config)
             allowed_tokens = build_transformers_prefix_allowed_tokens_fn(self.enforcer_tokenizer, parser)
-            grammar = grammar_logits_processor(self.torch, allowed_tokens)
-            with self.torch.inference_mode():
-                generated = self.model.generate(**inputs, max_new_tokens=192, do_sample=False,
-                    temperature=1.0, top_p=1.0, top_k=50,
-                    logits_processor=LogitsProcessorList([grammar]),
-                    stopping_criteria=StoppingCriteriaList([Deadline()]))
+
+            def measured_allowed(batch, ids):
+                nonlocal grammar_seconds
+                tick = time.monotonic()
+                try:
+                    return allowed_tokens(batch, ids)
+                finally:
+                    grammar_seconds += time.monotonic() - tick
+
+            grammar = grammar_logits_processor(self.torch, measured_allowed)
+            timings["grammar_setup_sec"] = time.monotonic() - tick
+            tick = time.monotonic()
+            try:
+                with self.torch.inference_mode():
+                    generated = self.model.generate(**inputs, max_new_tokens=192, do_sample=False,
+                        temperature=1.0, top_p=1.0, top_k=50,
+                        logits_processor=LogitsProcessorList([grammar]),
+                        stopping_criteria=StoppingCriteriaList([Deadline()]))
+            finally:
+                timings["generation_sec"] = time.monotonic() - tick
             raw = self.processor.batch_decode(generated[:, prefix_length:], skip_special_tokens=True)[0]
-            self.call_number += 1
             expired = time.monotonic() >= deadline
+            if expired:
+                stop_reason = "deadline"
+                raise AnalysisTimeoutError("VLM inference deadline exceeded")
+            if stop_reason == "exception":
+                stop_reason = "token_limit" if generated.shape[1] - prefix_length >= 192 else "eos"
+            if not complete_json_object(raw):
+                raise InferenceError("VLM generation stopped without a complete JSON object")
+            return normalize_negative_evidence(json_payload(raw), len(images))
+        except self.torch.cuda.OutOfMemoryError as exc:
+            stop_reason = "cuda_oom"
+            self.torch.cuda.empty_cache()
+            raise InferenceError("VLM CUDA out of memory; reduce image budget or use a validated quantized backend") from exc
+        except Exception as exc:
+            exception_type = type(exc).__name__
+            raise
+        finally:
+            ended = time.monotonic()
             if self.trace_dir:
                 self.trace_dir.mkdir(parents=True, exist_ok=True)
-                metadata = {"call": self.call_number, "elapsed_sec": time.monotonic() - started,
-                    "cpu_threads": self.torch.get_num_threads(),
-                    "input_tokens": prefix_length, "generated_tokens": generated.shape[1] - prefix_length,
-                    "deadline_exceeded": expired, "complete_json": complete_json_object(raw)}
+                metadata = {"call": self.call_number, "pid": os.getpid(),
+                    "window": self.window_context.get("window", self.call_number),
+                    "attempt": self.window_context.get("attempt", 0),
+                    "started_utc": started_utc, "ended_utc": datetime.now(timezone.utc).isoformat(),
+                    "elapsed_sec": ended - started, "window_budget_sec": timeout_sec,
+                    "analysis_remaining_sec": self.window_context.get("analysis_deadline", deadline) - ended,
+                    "frame_count": len(pictures), "frame_sizes": [list(p.size) for p in pictures],
+                    "cpu_threads": self.torch.get_num_threads(), "interop_threads": self.torch.get_num_interop_threads(),
+                    "input_tokens": prefix_length, "max_new_tokens": 192,
+                    "generated_tokens": generated.shape[1] - prefix_length if generated is not None else None,
+                    "deadline_exceeded": ended >= deadline, "complete_json": complete_json_object(raw),
+                    "stop_reason": stop_reason, "grammar_allowed_sec": grammar_seconds,
+                    "exception_type": exception_type, "image_grid_thw": image_grid,
+                    "stopping_sec": stopping_seconds, **timings}
                 if self.device.startswith("cuda"):
                     metadata.update(memory_allocated_bytes=self.torch.cuda.memory_allocated(),
                         memory_reserved_bytes=self.torch.cuda.memory_reserved(),
                         peak_reserved_bytes=self.torch.cuda.max_memory_reserved())
                 with (self.trace_dir / f"vlm_{os.getpid()}.jsonl").open("a", encoding="utf-8") as log:
                     log.write(json.dumps(metadata) + "\n")
-                if expired:
-                    (self.trace_dir / f"timeout_{os.getpid()}_{self.call_number}.txt").write_text(raw, encoding="utf-8")
-            if expired:
-                raise AnalysisTimeoutError("VLM inference deadline exceeded")
-            return normalize_negative_evidence(json_payload(raw), len(images))
-        except self.torch.cuda.OutOfMemoryError as exc:
-            self.torch.cuda.empty_cache()
-            raise InferenceError("VLM CUDA out of memory; reduce image budget or use a validated quantized backend") from exc
-        finally:
+                with (self.trace_dir / f"window_events_{os.getpid()}.jsonl").open("a", encoding="utf-8") as log:
+                    log.write(json.dumps({"event": "ended", **metadata}) + "\n")
             for picture in pictures:
                 picture.close()
             if self.release_cuda_cache and self.device.startswith("cuda"):

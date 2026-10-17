@@ -1,6 +1,7 @@
 """Synchronous integration pipeline. Production execution is process-supervised."""
 from dataclasses import dataclass, field
 import hashlib
+import json
 import multiprocessing as mp
 import os
 from pathlib import Path
@@ -47,9 +48,10 @@ class Analyzer:
     Direct calls check deadlines between operations. Injectable components must
     honor their own timeout. Synthetic components require explicit allow_mock.
     """
-    def __init__(self, detector, vlm, config=None, *, allow_mock=False):
+    def __init__(self, detector, vlm, config=None, *, allow_mock=False, deadline=None):
         self.config = config or AnalyzerConfig()
         self.detector, self.vlm = detector, vlm
+        self.deadline = deadline
         self.is_mock = bool(getattr(detector, "is_mock", True) or getattr(vlm, "is_mock", True))
         if self.is_mock and not allow_mock:
             raise ModelNotConfiguredError("Mock components are allowed only in explicit synthetic tests")
@@ -61,7 +63,7 @@ class Analyzer:
 
     def analyze(self, video_path):
         started = time.monotonic()
-        deadline = started + self.config.timeout_sec
+        deadline = min(started + self.config.timeout_sec, self.deadline) if self.deadline is not None else started + self.config.timeout_sec
         report = AnalysisReport(is_mock=self.is_mock, diagnostic_only=not bool(self.catalog),
             timings={"extraction_sec": 0., "detection_sec": 0., "vlm_sec": 0.})
         extractor = EventExtractor(self.detector)
@@ -88,9 +90,17 @@ class Analyzer:
             configure_schema = getattr(self.vlm, "set_response_schema", None)
             if configure_schema:
                 configure_schema(generation_schema(self.allowed_catalog, timestamps, version=self.config.prompt_version))
-            vlm_deadline = min(deadline, time.monotonic() + self.config.vlm_timeout_sec)
+            # Keep time for evidence serialization and child-process shutdown.
+            # A slower window may use available budget, never renew the job's
+            # deadline or return a partial/negative result for unexamined video.
+            vlm_deadline = min(deadline - 5., time.monotonic() + self.config.vlm_timeout_sec)
             for attempt in range(2):
                 t = time.monotonic()
+                if t >= vlm_deadline:
+                    raise AnalysisTimeoutError("Insufficient analysis budget for a VLM window")
+                configure_context = getattr(self.vlm, "set_window_context", None)
+                if configure_context:
+                    configure_context(window=report.candidate_windows, attempt=attempt, analysis_deadline=deadline)
                 raw = self.vlm.infer(images, prompt, vlm_deadline - t)
                 report.timings["vlm_sec"] += time.monotonic() - t
                 check_deadline()
@@ -101,7 +111,6 @@ class Analyzer:
                     break
                 except InferenceError:
                     # Private diagnostics remain under the authorized temporary root.
-                    import json
                     log_dir = Path(self.config.temp_dir) / "diagnostics"
                     log_dir.mkdir(parents=True, exist_ok=True)
                     (log_dir / f"invalid_{os.getpid()}_{report.candidate_windows}_{attempt}.json").write_text(
@@ -201,7 +210,7 @@ class Analyzer:
         return report
 
 
-def _production_worker(connection, video_path, config):
+def _production_worker(connection, video_path, config, deadline=None):
     # Set before importing model libraries. Inputs are local files and in-memory bytes.
     os.environ["HF_HUB_OFFLINE"] = "1"
     os.environ["TRANSFORMERS_OFFLINE"] = "1"
@@ -234,10 +243,26 @@ def _production_worker(connection, video_path, config):
             if config.memory_fraction is not None:
                 torch.cuda.set_per_process_memory_fraction(config.memory_fraction)
             torch.cuda.reset_peak_memory_stats()
+        load_started = time.monotonic()
         detector = LocalRTDetr(config.detector_dir, config.device)
+        detector_loaded = time.monotonic()
         vlm = LocalTransformersVLM(config.vlm_dir, config.device, trace_dir=Path(config.temp_dir) / "diagnostics",
             release_cuda_cache=config.release_cuda_cache)
-        report = Analyzer(detector, vlm, config).analyze(video_path)
+        log_dir = Path(config.temp_dir) / "diagnostics"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        (log_dir / f"runtime_{os.getpid()}.json").write_text(json.dumps({
+            "pid": os.getpid(), "parent_pid": os.getppid(), "executable": sys.executable,
+            "torch_version": torch.__version__, "cuda_version": torch.version.cuda,
+            "cpu_threads": torch.get_num_threads(), "interop_threads": torch.get_num_interop_threads(),
+            "detector_load_sec": detector_loaded - load_started,
+            "vlm_load_sec": time.monotonic() - detector_loaded,
+            "process_setup_and_model_load_sec": time.monotonic() - started,
+            "analysis_remaining_sec": deadline - time.monotonic() if deadline is not None else None,
+            "max_side": config.max_side, "sample_fps": config.sample_fps,
+            "window_frames": config.window_frames, "max_windows": config.max_windows,
+            "vlm_timeout_sec": config.vlm_timeout_sec,
+        }), encoding="utf-8")
+        report = Analyzer(detector, vlm, config, deadline=deadline).analyze(video_path)
         report.timings["model_load_sec"] = time.monotonic() - started - report.timings["total_sec"]
         if config.device.startswith("cuda"):
             report.peak_vram_bytes = torch.cuda.max_memory_allocated()
@@ -298,7 +323,7 @@ def analyze_video_report(video_path: str, config: AnalyzerConfig | None = None) 
             raise ModelNotConfiguredError(f"Local model download is incomplete: {path}")
     load_catalog(config.catalog_path)
     started = time.monotonic()
-    report = _supervise(_production_worker, (str(Path(video_path).resolve()), config), config.timeout_sec)
+    report = _supervise(_production_worker, (str(Path(video_path).resolve()), config, started + config.timeout_sec), config.timeout_sec)
     report.timings["wall_sec"] = time.monotonic() - started
     return report
 
